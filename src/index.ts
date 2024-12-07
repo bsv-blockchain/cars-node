@@ -213,7 +213,7 @@ app.post('/api/v1/project/create', (req: AuthRequest, res: Response) => {
  * @route GET /api/v1/projects
  * @desc List all projects for which the caller is an admin.
  */
-app.get('/api/v1/projects', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/get-projects', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
 
     const adminProjects = Object.entries(projects)
@@ -282,7 +282,7 @@ app.post('/api/v1/project/:projectId/removeAdmin', (req: AuthRequest, res: Respo
  * @route GET /api/v1/project/:projectId/deploys
  * @desc Get a list of all deployments for a project if user is admin.
  */
-app.get('/api/v1/project/:projectId/deploys', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/get-project/:projectId/deploys', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
     const { projectId } = req.params
 
@@ -296,7 +296,7 @@ app.get('/api/v1/project/:projectId/deploys', (req: AuthRequest, res: Response) 
  * @route GET /api/v1/project/:projectId/logs
  * @desc Get the project logs if user is admin.
  */
-app.get('/api/v1/project/:projectId/logs', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/get-project/:projectId/logs', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
     const { projectId } = req.params
 
@@ -327,7 +327,7 @@ app.post('/api/v1/project/:projectId/logs', (req: AuthRequest, res: Response) =>
  * @route GET /api/v1/deploy/:deploymentId/logs
  * @desc Get the deploy logs if user is admin of the associated project.
  */
-app.get('/api/v1/deploy/:deploymentId/logs', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/get-deploy/:deploymentId/logs', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
     const { deploymentId } = req.params
 
