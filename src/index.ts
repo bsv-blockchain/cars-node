@@ -181,10 +181,9 @@ function requireProjectAdmin(projectId: string, identityKey: string, res: Respon
 /**
  * @route POST /api/v1/register
  * @desc Register a user using Authrite's authenticated certificates.
- *       The user's email is extracted from the Authrite cert.
+ *       The user's email is extracted from the Authrite certificate.
  */
 app.post('/api/v1/register', (req: AuthRequest, res: Response) => {
-    // Extract email from decrypted certificate fields
     const email = req.authrite!.certificates[0].decryptedFields.email
     users[req.authrite!.identityKey] = email
     res.json({ message: 'User registered', userCount: Object.keys(users).length })
@@ -210,10 +209,10 @@ app.post('/api/v1/project/create', (req: AuthRequest, res: Response) => {
 })
 
 /**
- * @route GET /api/v1/projects
+ * @route POST /api/v1/projects/list
  * @desc List all projects for which the caller is an admin.
  */
-app.post('/api/v1/get-projects', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/projects/list', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
 
     const adminProjects = Object.entries(projects)
@@ -279,10 +278,10 @@ app.post('/api/v1/project/:projectId/removeAdmin', (req: AuthRequest, res: Respo
 })
 
 /**
- * @route GET /api/v1/project/:projectId/deploys
+ * @route POST /api/v1/project/:projectId/deploys/list
  * @desc Get a list of all deployments for a project if user is admin.
  */
-app.post('/api/v1/get-project/:projectId/deploys', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/project/:projectId/deploys/list', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
     const { projectId } = req.params
 
@@ -293,10 +292,10 @@ app.post('/api/v1/get-project/:projectId/deploys', (req: AuthRequest, res: Respo
 })
 
 /**
- * @route GET /api/v1/project/:projectId/logs
+ * @route POST /api/v1/project/:projectId/logs/show
  * @desc Get the project logs if user is admin.
  */
-app.post('/api/v1/get-project/:projectId/logs', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/project/:projectId/logs/show', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
     const { projectId } = req.params
 
@@ -307,27 +306,10 @@ app.post('/api/v1/get-project/:projectId/logs', (req: AuthRequest, res: Response
 })
 
 /**
- * @route POST /api/v1/project/:projectId/logs
- * @desc Append to project logs if user is admin.
- * @body { message: string }
- */
-app.post('/api/v1/project/:projectId/logs', (req: AuthRequest, res: Response) => {
-    if (!requireRegisteredUser(req, res)) return
-    const { projectId } = req.params
-    const { message } = req.body
-
-    if (!requireProjectExists(projectId, res)) return
-    if (!requireProjectAdmin(projectId, req.authrite!.identityKey, res)) return
-
-    projects[projectId].log += `${new Date().toISOString()} - ${req.authrite!.identityKey}: ${message}\n`
-    res.json({ message: 'Log appended' })
-})
-
-/**
- * @route GET /api/v1/deploy/:deploymentId/logs
+ * @route POST /api/v1/deploy/:deploymentId/logs/show
  * @desc Get the deploy logs if user is admin of the associated project.
  */
-app.post('/api/v1/get-deploy/:deploymentId/logs', (req: AuthRequest, res: Response) => {
+app.post('/api/v1/deploy/:deploymentId/logs/show', (req: AuthRequest, res: Response) => {
     if (!requireRegisteredUser(req, res)) return
     const { deploymentId } = req.params
 
@@ -341,29 +323,6 @@ app.post('/api/v1/get-deploy/:deploymentId/logs', (req: AuthRequest, res: Respon
     if (!requireProjectAdmin(deploy.project, req.authrite!.identityKey, res)) return
 
     res.json({ logs: deploy.log })
-})
-
-/**
- * @route POST /api/v1/deploy/:deploymentId/logs
- * @desc Append to deploy logs if user is admin of the project.
- * @body { message: string }
- */
-app.post('/api/v1/deploy/:deploymentId/logs', (req: AuthRequest, res: Response) => {
-    if (!requireRegisteredUser(req, res)) return
-    const { deploymentId } = req.params
-    const { message } = req.body
-
-    if (!deploys[deploymentId]) {
-        return res.status(404).json({ error: 'Deploy not found' })
-    }
-
-    const deploy = deploys[deploymentId]
-
-    // Must be admin of the project
-    if (!requireProjectAdmin(deploy.project, req.authrite!.identityKey, res)) return
-
-    deploy.log += `${new Date().toISOString()} - ${req.authrite!.identityKey}: ${message}\n`
-    res.json({ message: 'Log appended to deploy' })
 })
 
 /**
