@@ -322,6 +322,23 @@ app.post('/api/v1/project/:projectId/removeAdmin', (req: AuthRequest, res: Respo
 })
 
 /**
+ * @route POST /api/v1/project/:projectId/admins/list
+ * @desc Get a list of all admins for a project if the caller is an admin.
+ */
+app.post('/api/v1/project/:projectId/admins/list', (req: AuthRequest, res: Response) => {
+    const { projectId } = req.params
+    console.log(`[${new Date().toISOString()}] Request to list admins for project=${projectId} by user=${req.authrite!.identityKey}`)
+
+    if (!requireRegisteredUser(req, res)) return
+    if (!requireProjectExists(projectId, res)) return
+    if (!requireProjectAdmin(projectId, req.authrite!.identityKey, res)) return
+
+    console.log(`[${new Date().toISOString()}] User is admin of project ${projectId}. Returning list of admins.`)
+    const adminList = projects[projectId].admins
+    res.json({ admins: adminList })
+})
+
+/**
  * @route POST /api/v1/project/:projectId/deploys/list
  * @desc Get a list of all deployments for a project if user is admin.
  */
