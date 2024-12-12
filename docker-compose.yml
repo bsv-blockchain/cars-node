@@ -29,6 +29,7 @@ services:
       DATABASE_URL: "mysql://cars_user:cars_pass@mysql:3306/cars_db"
       LOG_LEVEL: "info"
       K3S_TOKEN: "cars-token"
+      KUBECONFIG: "/kubeconfig/kubeconfig.yaml"
     depends_on:
       - mysql
     volumes:
@@ -47,7 +48,10 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    command: server
+    command:
+      - server
+      - "--tls-san=cars-k3s"
+      - "--node-name=cars-k3s"
     restart: always
     environment:
       K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
@@ -58,6 +62,8 @@ services:
       - ./local-data/kubeconfig:/output
     ports:
       - "6443:6443"
+      - "8081:80"
+      - "8082:443"
 
 volumes:
   k3s-server: {}

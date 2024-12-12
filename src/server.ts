@@ -6,6 +6,7 @@ import bodyParser from 'body-parser';
 import { ProtoWallet, PrivateKey } from '@bsv/sdk';
 import routes from './routes';
 import upload from './routes/upload';
+import { initCluster } from './init-cluster';
 
 const port = parseInt(process.env.PORT || '7777', 10);
 const SERVER_PRIVATE_KEY =
@@ -20,7 +21,7 @@ async function main() {
     await db.migrate.latest();
     logger.info('Migrations completed.');
 
-    // Future: Check k8s, helm connectivity if required
+    await initCluster();
 
     const app = express();
 

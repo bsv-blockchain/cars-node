@@ -20,4 +20,7 @@ while ! nc -z $host2 $port2; do
 done
 echo "$host2:$port2 is up"
 
+sleep 1
+sed -i 's/https:\/\/127.0.0.1:6443/https:\/\/cars-k3s:6443/g' /kubeconfig/kubeconfig.yaml
+
 exec "$@"
