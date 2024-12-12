@@ -1,7 +1,5 @@
 import { spawnSync } from 'child_process';
 import inquirer from 'inquirer';
-import fs from 'fs';
-import path from 'path';
 
 async function checkCmd(cmd: string) {
     const res = spawnSync(cmd, ['--version'], { encoding: 'utf-8' });

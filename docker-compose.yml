@@ -20,7 +20,6 @@ services:
   cars-node:
     build: .
     container_name: cars-node
-    # Bind the app to host port 7777
     ports:
       - "7777:7777"
     environment:
@@ -29,10 +28,12 @@ services:
       SERVER_BASEURL: "http://localhost:7777"
       DATABASE_URL: "mysql://cars_user:cars_pass@mysql:3306/cars_db"
       LOG_LEVEL: "info"
+      K3S_TOKEN: "cars-token"
     depends_on:
       - mysql
     volumes:
       - ./src:/app/src
+      - ./local-data/kubeconfig:/kubeconfig
 
   k3s-server:
     image: rancher/k3s:latest
@@ -55,9 +56,6 @@ services:
     volumes:
       - k3s-server:/var/lib/rancher/k3s
       - ./local-data/kubeconfig:/output
-      # volumes:
-      # - ./local-data/k3s:/var/lib/rancher/k3s
-      # - ./local-data/kubeconfig:/output
     ports:
       - "6443:6443"
 
