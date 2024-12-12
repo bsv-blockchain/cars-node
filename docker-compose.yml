@@ -1,0 +1,65 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cars-mysql
+    environment:
+      MYSQL_DATABASE: cars_db
+      MYSQL_USER: cars_user
+      MYSQL_PASSWORD: cars_pass
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./local-data/mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  cars-node:
+    build: .
+    container_name: cars-node
+    # Bind the app to host port 7777
+    ports:
+      - "7777:7777"
+    environment:
+      PORT: 7777
+      SERVER_PRIVATE_KEY: "6dcc124be5f382be631d49ba12f61adbce33a5ac14f6ddee12de25272f943f8b"
+      SERVER_BASEURL: "http://localhost:7777"
+      DATABASE_URL: "mysql://cars_user:cars_pass@mysql:3306/cars_db"
+      LOG_LEVEL: "info"
+    depends_on:
+      - mysql
+    volumes:
+      - ./src:/app/src
+
+  k3s-server:
+    image: rancher/k3s:latest
+    container_name: cars-k3s
+    privileged: true
+    tmpfs:
+      - /run
+      - /var/run
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+    command: server
+    restart: always
+    environment:
+      K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
+      K3S_KUBECONFIG_MODE: "666"
+      K3S_TOKEN: "cars-token"
+    volumes:
+      - k3s-server:/var/lib/rancher/k3s
+      - ./local-data/kubeconfig:/output
+      # volumes:
+      # - ./local-data/k3s:/var/lib/rancher/k3s
+      # - ./local-data/kubeconfig:/output
+    ports:
+      - "6443:6443"
+
+volumes:
+  k3s-server: {}
