@@ -8,7 +8,7 @@ services:
       MYSQL_PASSWORD: cars_pass
       MYSQL_ROOT_PASSWORD: rootpassword
     ports:
-      - "3306:3306"
+      - "3306:3306" # No need to open this up in production, only here for development.
     volumes:
       - ./local-data/mysql_data:/var/lib/mysql
     healthcheck:
@@ -25,13 +25,14 @@ services:
     environment:
       PORT: 7777
       SERVER_PRIVATE_KEY: "6dcc124be5f382be631d49ba12f61adbce33a5ac14f6ddee12de25272f943f8b"
-      SERVER_BASEURL: "http://localhost:7777"
+      SERVER_BASEURL: "http://localhost:7777" # Where can people interact with CARS Clouud API?
       DATABASE_URL: "mysql://cars_user:cars_pass@mysql:3306/cars_db"
       LOG_LEVEL: "info"
       K3S_TOKEN: "cars-token"
       KUBECONFIG: "/kubeconfig/kubeconfig.yaml"
       DOCKER_HOST: "tcp://dind:2375"
-      DOCKER_REGISTRY: "http://cars-registry:5000"
+      DOCKER_REGISTRY: "cars-registry:5000"
+      PROJECT_DEPLOYMENT_DNS_NAME: "localhost" # Where will projects be deployed online?
     depends_on:
       - mysql
     volumes:
@@ -64,15 +65,12 @@ services:
       - ./local-data/kubeconfig:/output
       - ./registries.yaml:/etc/rancher/k3s/registries.yaml:ro
     ports:
-      - "6443:6443"
       - "8081:80"
       - "8082:443"
 
   registry:
     image: registry:2
     container_name: cars-registry
-    ports:
-      - "8083:5000"
     volumes:
       - ./local-data/registry:/var/lib/registry
 
@@ -85,8 +83,6 @@ services:
     command: [ "--insecure-registry=cars-registry:5000" ]
     volumes:
       - dind-storage:/var/lib/docker
-    ports:
-      - "2375:2375"
 
 volumes:
   k3s-server: {}

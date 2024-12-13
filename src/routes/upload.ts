@@ -15,6 +15,8 @@ import {
     generateWaitScript,
 } from '../utils';
 
+const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!
+
 export default async (req: Request, res: Response) => {
     const { db, wallet }: { db: Knex; wallet: Wallet } = req as any;
     const { deploymentId, signature } = req.params;
@@ -218,12 +220,14 @@ description: A chart to deploy a CARS project
         // values.yaml - inline values
         const useMySQL = backendEnabled;
         const useMongo = backendEnabled;
-        const ingressHost = `${project.project_uuid}.example.local`;
+        const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!
+        const ingressHost = `${project.project_uuid}.${projectsDomain}`;
 
         const valuesObj = {
             backendImage,
             frontendImage,
-            ingressHost,
+            ingressHostFrontend: `frontend.${ingressHost}`,
+            ingressHostBackend: `backend.${ingressHost}`,
             useMySQL,
             useMongo
         };
@@ -301,37 +305,42 @@ spec:
         );
 
         // ingress.yaml
-        fs.writeFileSync(
-            path.join(helmDir, 'templates', 'ingress.yaml'),
-            `apiVersion: networking.k8s.io/v1
+        let ingressYaml = `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "cars-project.fullname" . }}-ingress
 spec:
   ingressClassName: nginx
-  rules:
-  - host: {{ .Values.ingressHost }}
+  rules:`
+        if (frontendEnabled) {
+            ingressYaml += `
+  - host: {{ .Values.ingressHostFrontend }}
     http:
       paths:
-      {{- if .Values.frontendImage }}
       - path: /
         pathType: Prefix
         backend:
           service:
             name: {{ include "cars-project.fullname" . }}-service
             port:
-              number: 80
-      {{- end }}
-      {{- if .Values.backendImage }}
-      - path: /api
+              number: 80`
+        }
+        if (backendEnabled) {
+            ingressYaml += `
+  - host: {{ .Values.ingressHostBackend }}
+    http:
+      paths:
+      - path: /
         pathType: Prefix
         backend:
           service:
             name: {{ include "cars-project.fullname" . }}-service
             port:
-              number: 8080
-      {{- end }}
-`
+              number: 8080`
+        }
+        fs.writeFileSync(
+            path.join(helmDir, 'templates', 'ingress.yaml'),
+            ingressYaml
         );
 
         // mysql.yaml
@@ -386,7 +395,7 @@ spec:
         await logStep(`Helm chart generated at ${helmDir}`);
 
         const namespace = `cars-project-${project.project_uuid}`;
-        const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}-${deploymentId.substr(0, 12)}`;
+        const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}`;
 
         // Deploy with helm using --atomic and --create-namespace
         runCmd(`helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic --create-namespace`);
@@ -397,8 +406,19 @@ spec:
         runCmd(`kubectl rollout status deployment/${helmReleaseName}-deployment -n ${namespace}`);
         await logStep(`Project ${project.project_uuid}, release ${deploymentId} rolled out successfully.`);
 
+        if (frontendEnabled) {
+            await logStep(`Frontend URL: ${valuesObj.ingressHostFrontend}`)
+        }
+        if (backendEnabled) {
+            await logStep(`Backend URL:  ${valuesObj.ingressHostBackend}`)
+        }
+
         // Success response
-        res.json({ message: 'Deployment completed successfully' });
+        res.json({
+            message: 'Deployment completed successfully',
+            frontendUrl: frontendEnabled ? valuesObj.ingressHostFrontend : undefined,
+            backendUrl: backendEnabled ? valuesObj.ingressHostBackend : undefined
+        });
     } catch (error: any) {
         // On any error, log and respond
         const errMsg = `Error handling upload: ${error.message}`;
