@@ -31,6 +31,7 @@ export default async (req: Request, res: Response) => {
         try {
             execSync(cmd, { stdio: 'inherit', ...options });
         } catch (err: any) {
+            console.error(err)
             throw new Error(`Command failed (${cmd}): ${err.message}`);
         }
     }
@@ -328,7 +329,7 @@ spec:
         await logStep(`Helm chart generated at ${helmDir}`);
 
         const namespace = `cars-project-${project.project_uuid}`;
-        const helmReleaseName = `cars-project-${project.project_uuid}-${deploymentId}`;
+        const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}-${deploymentId.substr(0, 12)}`;
 
         // Deploy with helm using --atomic to ensure rollback on failure
         runCmd(`helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic`);
