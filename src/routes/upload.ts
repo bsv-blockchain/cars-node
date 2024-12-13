@@ -5,10 +5,18 @@ import { Utils, Wallet } from '@bsv/sdk';
 import type { Knex } from 'knex';
 import { execSync } from 'child_process';
 import logger from '../logger';
-import { CARSConfig, CARSConfigInfo, generateDockerfile, generateIndexTs, generatePackageJson, generateTsConfig, generateWaitScript } from '../utils'
+import {
+    CARSConfig,
+    CARSConfigInfo,
+    generateDockerfile,
+    generateIndexTs,
+    generatePackageJson,
+    generateTsConfig,
+    generateWaitScript,
+} from '../utils';
 
 export default async (req: Request, res: Response) => {
-    const { db, wallet }: { db: Knex, wallet: Wallet } = req as any;
+    const { db, wallet }: { db: Knex; wallet: Wallet } = req as any;
     const { deploymentId, signature } = req.params;
 
     // Helper function to log steps to DB logs and logger
@@ -86,15 +94,18 @@ export default async (req: Request, res: Response) => {
             return res.status(400).json({ error: errMsg });
         }
 
-        const deploymentInfo: CARSConfigInfo = JSON.parse(fs.readFileSync(deploymentInfoPath, 'utf-8'));
+        const deploymentInfo: CARSConfigInfo = JSON.parse(
+            fs.readFileSync(deploymentInfoPath, 'utf-8')
+        );
         if (deploymentInfo.schema !== 'bsv-app') {
             const errMsg = 'Invalid schema in deployment-info.json';
             await logStep(errMsg, 'error');
             return res.status(400).json({ error: errMsg });
         }
 
-        const carsConfig: CARSConfig | undefined = deploymentInfo.configs?.find((c: CARSConfig) =>
-            c.provider === 'CARS' && c.projectID === project.project_uuid
+        const carsConfig: CARSConfig | undefined = deploymentInfo.configs?.find(
+            (c: CARSConfig) =>
+                c.provider === 'CARS' && c.projectID === project.project_uuid
         );
 
         if (!carsConfig || !carsConfig.projectID) {
@@ -123,9 +134,12 @@ export default async (req: Request, res: Response) => {
             }
 
             // Create Dockerfile for frontend (serving static files)
-            fs.writeFileSync(path.join(frontendDir, 'Dockerfile'), `FROM nginx:alpine
+            fs.writeFileSync(
+                path.join(frontendDir, 'Dockerfile'),
+                `FROM nginx:alpine
 COPY . /usr/share/nginx/html
-EXPOSE 80`);
+EXPOSE 80`
+            );
 
             runCmd(`docker build -t ${frontendImage} .`, { cwd: frontendDir });
             await logStep(`Frontend image built: ${frontendImage}`);
@@ -144,28 +158,40 @@ EXPOSE 80`);
                 return res.status(400).json({ error: errMsg });
             }
 
-            const backendPackageJsonPath = path.join(backendDir, 'package.json')
+            const backendPackageJsonPath = path.join(backendDir, 'package.json');
             if (!fs.existsSync(backendPackageJsonPath)) {
                 const errMsg = 'Backend directory does not contain a package.json file.';
                 await logStep(errMsg, 'error');
                 return res.status(400).json({ error: errMsg });
             }
-            const backendPackageJson = JSON.parse(fs.readFileSync(backendPackageJsonPath, 'utf8'))
+            const backendPackageJson = JSON.parse(
+                fs.readFileSync(backendPackageJsonPath, 'utf8')
+            );
 
             let enableContracts = false;
             if (deploymentInfo.contracts && deploymentInfo.contracts.language === 'sCrypt') {
                 enableContracts = true;
-            } else if (deploymentInfo.contracts && deploymentInfo.contracts.language && deploymentInfo.contracts.language !== 'sCrypt') {
+            } else if (
+                deploymentInfo.contracts &&
+                deploymentInfo.contracts.language &&
+                deploymentInfo.contracts.language !== 'sCrypt'
+            ) {
                 const errMsg = `BSV Contract language not supported: ${deploymentInfo.contracts.language}`;
                 await logStep(errMsg, 'error');
                 return res.status(400).json({ error: errMsg });
             }
 
             // Create backend container files
-            fs.writeFileSync(path.join(backendDir, 'Dockerfile'), generateDockerfile(enableContracts));
+            fs.writeFileSync(
+                path.join(backendDir, 'Dockerfile'),
+                generateDockerfile(enableContracts)
+            );
             fs.writeFileSync(path.join(backendDir, 'wait-for-services.sh'), generateWaitScript());
             fs.writeFileSync(path.join(backendDir, 'tsconfig.json'), generateTsConfig());
-            fs.writeFileSync(path.join(backendDir, 'package.json'), JSON.stringify(generatePackageJson(backendPackageJson.dependencies as Record<string, string>), null, 2));
+            fs.writeFileSync(
+                path.join(backendDir, 'package.json'),
+                JSON.stringify(generatePackageJson(backendPackageJson.dependencies as Record<string, string>), null, 2)
+            );
             fs.writeFileSync(path.join(backendDir, 'index.ts'), generateIndexTs(deploymentInfo));
 
             runCmd(`docker build -t ${backendImage} ${backendDir}`);
@@ -180,13 +206,16 @@ EXPOSE 80`);
         fs.ensureDirSync(helmDir);
 
         // Chart.yaml
-        fs.writeFileSync(path.join(helmDir, 'Chart.yaml'), `apiVersion: v2
+        fs.writeFileSync(
+            path.join(helmDir, 'Chart.yaml'),
+            `apiVersion: v2
 name: cars-project
 version: 0.1.0
 description: A chart to deploy a CARS project
-`);
+`
+        );
 
-        // values.yaml - we use inline values. If db needed, define them too.
+        // values.yaml - inline values
         const useMySQL = backendEnabled;
         const useMongo = backendEnabled;
         const ingressHost = `${project.project_uuid}.example.local`;
@@ -202,7 +231,21 @@ description: A chart to deploy a CARS project
 
         // templates/deployment.yaml
         fs.ensureDirSync(path.join(helmDir, 'templates'));
-        fs.writeFileSync(path.join(helmDir, 'templates', 'deployment.yaml'), `apiVersion: apps/v1
+
+        // _helpers.tpl
+        // We'll base fullname on release name for consistency
+        fs.writeFileSync(
+            path.join(helmDir, 'templates', '_helpers.tpl'),
+            `{{- define "cars-project.fullname" -}}
+{{- .Release.Name -}}
+{{- end }}
+`
+        );
+
+        // deployment.yaml
+        fs.writeFileSync(
+            path.join(helmDir, 'templates', 'deployment.yaml'),
+            `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "cars-project.fullname" . }}-deployment
@@ -229,10 +272,13 @@ spec:
         ports:
         - containerPort: 80
       {{- end }}
-`);
+`
+        );
 
-        // templates/service.yaml
-        fs.writeFileSync(path.join(helmDir, 'templates', 'service.yaml'), `apiVersion: v1
+        // service.yaml
+        fs.writeFileSync(
+            path.join(helmDir, 'templates', 'service.yaml'),
+            `apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cars-project.fullname" . }}-service
@@ -251,14 +297,18 @@ spec:
     targetPort: 80
     name: frontend
   {{- end }}
-`);
+`
+        );
 
-        // templates/ingress.yaml (if frontend or backend)
-        fs.writeFileSync(path.join(helmDir, 'templates', 'ingress.yaml'), `apiVersion: networking.k8s.io/v1
+        // ingress.yaml
+        fs.writeFileSync(
+            path.join(helmDir, 'templates', 'ingress.yaml'),
+            `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "cars-project.fullname" . }}-ingress
 spec:
+  ingressClassName: nginx
   rules:
   - host: {{ .Values.ingressHost }}
     http:
@@ -281,11 +331,14 @@ spec:
             port:
               number: 8080
       {{- end }}
-`);
+`
+        );
 
-        // templates/mysql.yaml
+        // mysql.yaml
         if (useMySQL) {
-            fs.writeFileSync(path.join(helmDir, 'templates', 'mysql.yaml'), `apiVersion: v1
+            fs.writeFileSync(
+                path.join(helmDir, 'templates', 'mysql.yaml'),
+                `apiVersion: v1
 kind: Pod
 metadata:
   name: mysql
@@ -306,12 +359,15 @@ spec:
       value: "projectPass"
     ports:
     - containerPort: 3306
-`);
+`
+            );
         }
 
-        // templates/mongo.yaml
+        // mongo.yaml
         if (useMongo) {
-            fs.writeFileSync(path.join(helmDir, 'templates', 'mongo.yaml'), `apiVersion: v1
+            fs.writeFileSync(
+                path.join(helmDir, 'templates', 'mongo.yaml'),
+                `apiVersion: v1
 kind: Pod
 metadata:
   name: mongo
@@ -323,7 +379,8 @@ spec:
     image: mongo:6.0
     ports:
     - containerPort: 27017
-`);
+`
+            );
         }
 
         await logStep(`Helm chart generated at ${helmDir}`);
@@ -331,8 +388,8 @@ spec:
         const namespace = `cars-project-${project.project_uuid}`;
         const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}-${deploymentId.substr(0, 12)}`;
 
-        // Deploy with helm using --atomic to ensure rollback on failure
-        runCmd(`helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic`);
+        // Deploy with helm using --atomic and --create-namespace
+        runCmd(`helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic --create-namespace`);
 
         await logStep(`Helm release ${helmReleaseName} deployed`);
 

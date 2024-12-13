@@ -1,0 +1,4 @@
+mirrors:
+  "cars-registry:5000":
+    endpoint:
+      - "http://cars-registry:5000"

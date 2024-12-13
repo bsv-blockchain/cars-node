@@ -62,6 +62,7 @@ services:
     volumes:
       - k3s-server:/var/lib/rancher/k3s
       - ./local-data/kubeconfig:/output
+      - ./registries.yaml:/etc/rancher/k3s/registries.yaml:ro
     ports:
       - "6443:6443"
       - "8081:80"
