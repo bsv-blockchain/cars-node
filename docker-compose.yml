@@ -31,7 +31,7 @@ services:
       K3S_TOKEN: "cars-token"
       KUBECONFIG: "/kubeconfig/kubeconfig.yaml"
       DOCKER_HOST: "tcp://dind:2375"
-      DOCKER_REGISTRY: "cars-registry:5000"
+      DOCKER_REGISTRY: "http://cars-registry:5000"
     depends_on:
       - mysql
     volumes:
@@ -81,6 +81,7 @@ services:
     privileged: true
     environment:
       DOCKER_TLS_CERTDIR: ""
+    command: [ "--insecure-registry=cars-registry:5000" ]
     volumes:
       - dind-storage:/var/lib/docker
     ports:
