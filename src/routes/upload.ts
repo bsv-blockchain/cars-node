@@ -107,30 +107,6 @@ export default async (req: Request, res: Response) => {
     let backendImage: string | null = null;
     let frontendImage: string | null = null;
 
-    if (backendEnabled) {
-        backendImage = `${registryHost}/cars-project-${project.project_uuid}/backend:${deploymentId}`;
-        await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: 'Building backend image...' });
-        logger.info('Building backend image...', { deploymentId });
-
-        // Docker build backend
-        const backendDir = path.join(uploadDir, 'backend');
-        if (!fs.existsSync(backendDir)) {
-            const errMsg = 'Backend directory not found but backend deployment requested.';
-            logger.error(errMsg, { deploymentId });
-            await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: errMsg });
-            return res.status(400).json({ error: errMsg });
-        }
-
-        execSync(`docker build -t ${backendImage} ${backendDir}`, { stdio: 'inherit' });
-        logger.info(`Backend image built: ${backendImage}`);
-        await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Backend image built: ${backendImage}` });
-
-        // Push backend image
-        execSync(`docker push ${backendImage}`, { stdio: 'inherit' });
-        logger.info(`Backend image pushed: ${backendImage}`, { deploymentId });
-        await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Backend image pushed: ${backendImage}` });
-    }
-
     if (frontendEnabled) {
         frontendImage = `${registryHost}/cars-project-${project.project_uuid}/frontend:${deploymentId}`;
         await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: 'Building frontend image...' });
@@ -160,52 +136,67 @@ EXPOSE 80`);
         await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Frontend image pushed: ${frontendImage}` });
     }
 
-    ///// WIP /////
+    if (backendEnabled) {
+        // TODO: Refine this and align it with LARS, and how the LARS container is assembled.
+        // We do not have a Dockerfile already in the backend, we need to assemble one.
+        // To do this, we need to do a similar process to LARS. We also need to synthesize the index.ts file, package.json, and the other files.
+        // We need to pay attention to the directory structure, the same way that LARS does for its backend container image builds.
+        // This container needs to incorporate @bsv/overlay-express.
+        backendImage = `${registryHost}/cars-project-${project.project_uuid}/backend:${deploymentId}`;
+        await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: 'Building backend image...' });
+        logger.info('Building backend image...', { deploymentId });
 
-    // If required, also build and push images for other services or steps defined in deployment-info.json.
-    // E.g., if there's a contracts language sCrypt and we compiled contracts.
+        // Docker build backend
+        const backendDir = path.join(uploadDir, 'backend');
+        if (!fs.existsSync(backendDir)) {
+            const errMsg = 'Backend directory not found but backend deployment requested.';
+            logger.error(errMsg, { deploymentId });
+            await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: errMsg });
+            return res.status(400).json({ error: errMsg });
+        }
+
+        // ... create Dockerfile, etc ...
+
+        execSync(`docker build -t ${backendImage} ${backendDir}`, { stdio: 'inherit' });
+        logger.info(`Backend image built: ${backendImage}`);
+        await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Backend image built: ${backendImage}` });
+
+        // Push backend image
+        execSync(`docker push ${backendImage}`, { stdio: 'inherit' });
+        logger.info(`Backend image pushed: ${backendImage}`, { deploymentId });
+        await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Backend image pushed: ${backendImage}` });
+    }
 
     // Once images are ready, generate a Helm chart dynamically.
-    // The chart might be generic, just need custom values.
-    const helmValuesPath = path.join(uploadDir, 'values.generated.yaml');
-    const helmValues = {
-        image: {},
-        // Possibly define keys only if backend/frontend exists
-        ...(backendEnabled ? { backendImage } : {}),
-        ...(frontendEnabled ? { frontendImage } : {}),
-        // If DB services are needed, we define them here:
-        // e.g., if the deployment-info says we need MySQL/Mongo per project, we might add subcharts or references.
-        // This can be as complex as needed, for now let's just show them:
-        db: {
-            mysql: carsConfig.network === 'mainnet' ? 'mysql-mainnet' : 'mysql-testnet'
-        }
-    };
+    // When there's a frontend, it is added to the chart.
+    // When there's a backend, it's also added, along with mysql and mongo images.
+    // Every project has its own mysql and mongo images, which are never shared across projects.
+    // This is analogous to how LARS generates and runs its docker-compose.
+    // Do not use values, instead just directly and dynamically generate the correct chart, as appropriate.
+    // LARS: would generate and execute a docker-compose.yml file as appropriate.
+    // CARS (this system): must therefore generate and then deploy it with Helm.
+    // NOTE: For resources that persist across releases, like the mysql and mongo databases, only deploy them once.
+    // In the chart and backend image, ensure that environmental variables are passed, as appropriate, so that the backend can access its associated databases.
 
-    fs.writeFileSync(helmValuesPath, JSON.stringify(helmValues, null, 2));
+    // ....
 
-    await db('logs').insert({ project_id: deploy.project_id, message: `Helm values generated at ${helmValuesPath}` });
-    logger.info(`Helm values generated at ${helmValuesPath}`);
-
-    // Deploy with helm. We'll assume we have a base chart in /app/helm-chart that references .Values.backendImage/.frontendImage
-    const namespace = `cars-project-${projectId}`;
-    execSync(`kubectl create namespace ${namespace} || true`, { stdio: 'inherit' });
-    logger.info(`Namespace ${namespace} ensured.`);
-    await db('logs').insert({ project_id: deploy.project_id, message: `Namespace ${namespace} ensured.` });
-
-    const helmReleaseName = `cars-project-${projectId}-${releaseId}`;
+    // ... Deploy with helm ...
+    const namespace = `cars-project-${project.project_uuid}`;
+    const helmReleaseName = `cars-project-${project.project_uuid}-${deploymentId}`;
     execSync([
-        'helm', 'upgrade', '--install', helmReleaseName, '/app/helm-chart',
-        '--namespace', namespace,
-        '-f', helmValuesPath
+        'helm', 'upgrade', '--install', helmReleaseName, '/app/helm-chart'/* USE DYNAMICALLY GENERATED CHART HERE!!! */,
+        '--namespace', namespace
     ].join(' '), { stdio: 'inherit' });
 
-    logger.info(`Helm release ${helmReleaseName} deployed`);
-    await db('logs').insert({ project_id: deploy.project_id, message: `Helm release ${helmReleaseName} deployed` });
+    logger.info(`Helm release ${helmReleaseName} deployed`, { deploymentId });
+    await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Helm release ${helmReleaseName} deployed` });
 
     // Wait for rollout
     execSync(`kubectl rollout status deployment/${helmReleaseName}-deployment -n ${namespace}`, { stdio: 'inherit' });
-    logger.info(`Project ${projectId}, release ${releaseId} successfully rolled out.`);
-    await db('logs').insert({ project_id: deploy.project_id, message: `Project ${projectId}, release ${releaseId} rolled out successfully.` });
+    logger.info(`Project ${project.project_uuid}, release ${deploymentId} successfully rolled out.`, { deploymentId });
+    await db('logs').insert({ project_id: deploy.project_id, deploy_id: deploy.id, message: `Project ${project.project_uuid}, release ${deploymentId} rolled out successfully.` });
+
+    // ... update the nginx ingress controller to point the project subdomain to the new release ...
 
     res.json({ message: 'File uploaded', size: req.body.length });
 }
