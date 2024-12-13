@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import logger from '../logger';
 import type { Knex } from 'knex';
 import { Utils, Wallet } from '@bsv/sdk';
+import { execSync } from 'child_process';
 
 const router = Router();
 
@@ -89,6 +90,9 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
     const identityKey = (req as any).authrite.identityKey;
     const { name } = req.body;
     const projectId = crypto.randomBytes(16).toString('hex');
+
+    execSync(`kubectl create namespace cars-project-${projectId} || true`, { stdio: 'inherit' });
+    logger.info(`Namespace cars-project-${projectId} ensured.`);
 
     const [projId] = await db('projects').insert({
         project_uuid: projectId,

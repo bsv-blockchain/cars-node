@@ -30,6 +30,8 @@ services:
       LOG_LEVEL: "info"
       K3S_TOKEN: "cars-token"
       KUBECONFIG: "/kubeconfig/kubeconfig.yaml"
+      DOCKER_HOST: "tcp://dind:2375"
+      DOCKER_REGISTRY: "cars-registry:5000"
     depends_on:
       - mysql
     volumes:
@@ -65,5 +67,25 @@ services:
       - "8081:80"
       - "8082:443"
 
+  registry:
+    image: registry:2
+    container_name: cars-registry
+    ports:
+      - "8083:5000"
+    volumes:
+      - ./local-data/registry:/var/lib/registry
+
+  dind:
+    image: docker:20-dind
+    container_name: cars-dind
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - dind-storage:/var/lib/docker
+    ports:
+      - "2375:2375"
+
 volumes:
   k3s-server: {}
+  dind-storage: {}
