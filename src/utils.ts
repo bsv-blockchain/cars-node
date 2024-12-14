@@ -55,7 +55,7 @@ const main = async () => {
     // For each topic manager
     for (const [name, pathToTm] of Object.entries(info.topicManagers || {})) {
         const importName = `tm_${name}`;
-        const pathToTmInContainer = path.join('/app', path.relative(process.cwd(), pathToTm)).replace(/\\/g, '/').replace('/backend/', '/');
+        const pathToTmInContainer = pathToTm.replace('/backend', '');
         imports += `import ${importName} from '${pathToTmInContainer}'\n`;
         mainFunction += `    server.configureTopicManager('${name}', new ${importName}())\n`;
     }
@@ -63,7 +63,7 @@ const main = async () => {
     // For each lookup service
     for (const [name, lsConfig] of Object.entries(info.lookupServices || {})) {
         const importName = `lsf_${name}`;
-        const pathToLsInContainer = path.join('/app', path.relative(process.cwd(), lsConfig.serviceFactory)).replace(/\\/g, '/').replace('/backend/', '/');
+        const pathToLsInContainer = lsConfig.serviceFactory.replace('/backend', '');
         imports += `import ${importName} from '${pathToLsInContainer}'\n`;
         if (lsConfig.hydrateWith === 'mongo') {
             mainFunction += `    server.configureLookupServiceWithMongo('${name}', ${importName})\n`;
@@ -101,7 +101,8 @@ export function generatePackageJson(backendDependencies: Record<string, string>)
             ...backendDependencies,
             "@bsv/overlay-express": "^0.1.9",
             "mysql2": "^3.11.5",
-            "tsx": "^4.19.2"
+            "tsx": "^4.19.2",
+            "chalk": "^5.3.0"
         },
         "devDependencies": {
             "@types/node": "^22.10.1"
@@ -121,10 +122,10 @@ COPY ./wait-for-services.sh /wait-for-services.sh
 RUN chmod +x /wait-for-services.sh`
     if (enableContracts) {
         file += `
-COPY ./artifacts .`
+COPY ./artifacts ./artifacts`
     }
     file += `
-COPY ./src .
+COPY ./src ./src
 
 EXPOSE 8080
 CMD ["/wait-for-services.sh", "mysql", "3306", "mongo", "27017", "npm", "run", "start"]`;

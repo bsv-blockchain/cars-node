@@ -14,8 +14,9 @@ import {
     generateTsConfig,
     generateWaitScript,
 } from '../utils';
+import crypto from 'crypto';
 
-const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!
+const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
 
 export default async (req: Request, res: Response) => {
     const { db, wallet }: { db: Knex; wallet: Wallet } = req as any;
@@ -41,7 +42,7 @@ export default async (req: Request, res: Response) => {
         try {
             execSync(cmd, { stdio: 'inherit', ...options });
         } catch (err: any) {
-            console.error(err)
+            console.error(err);
             throw new Error(`Command failed (${cmd}): ${err.message}`);
         }
     }
@@ -203,7 +204,6 @@ EXPOSE 80`
         }
 
         // Prepare dynamic Helm chart
-        // We'll create a chart directory in uploadDir/helm
         const helmDir = path.join(uploadDir, 'helm');
         fs.ensureDirSync(helmDir);
 
@@ -217,10 +217,9 @@ description: A chart to deploy a CARS project
 `
         );
 
-        // values.yaml - inline values
+        // We'll create services if backendEnabled is true
         const useMySQL = backendEnabled;
         const useMongo = backendEnabled;
-        const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!
         const ingressHost = `${project.project_uuid}.${projectsDomain}`;
 
         const valuesObj = {
@@ -233,11 +232,9 @@ description: A chart to deploy a CARS project
         };
         fs.writeFileSync(path.join(helmDir, 'values.yaml'), JSON.stringify(valuesObj, null, 2));
 
-        // templates/deployment.yaml
         fs.ensureDirSync(path.join(helmDir, 'templates'));
 
         // _helpers.tpl
-        // We'll base fullname on release name for consistency
         fs.writeFileSync(
             path.join(helmDir, 'templates', '_helpers.tpl'),
             `{{- define "cars-project.fullname" -}}
@@ -245,6 +242,8 @@ description: A chart to deploy a CARS project
 {{- end }}
 `
         );
+
+        const projectServerPrivateKey = crypto.randomBytes(32).toString('hex')
 
         // deployment.yaml
         fs.writeFileSync(
@@ -254,10 +253,10 @@ kind: Deployment
 metadata:
   name: {{ include "cars-project.fullname" . }}-deployment
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: {{ include "cars-project.fullname" . }}
-  replicas: 1
   template:
     metadata:
       labels:
@@ -267,6 +266,19 @@ spec:
       {{- if .Values.backendImage }}
       - name: backend
         image: {{ .Values.backendImage }}
+        env:
+        - name: SERVER_PRIVATE_KEY
+          value: "${projectServerPrivateKey}"
+        - name: HOSTING_URL
+          value: "${valuesObj.ingressHostBackend}"
+        - name: REQUEST_LOGGING
+          value: "true"
+        - name: NETWORK
+          value: "${carsConfig.network}"
+        - name: KNEX_URL
+          value: "mysql://projectUser:projectPass@mysql:3306/projectdb"
+        - name: MONGO_URL
+          value: "mongodb://root:rootpassword@mongo:27017/admin"
         ports:
         - containerPort: 8080
       {{- end }}
@@ -279,7 +291,7 @@ spec:
 `
         );
 
-        // service.yaml
+        // service.yaml (for the backend/frontend)
         fs.writeFileSync(
             path.join(helmDir, 'templates', 'service.yaml'),
             `apiVersion: v1
@@ -343,8 +355,9 @@ spec:
             ingressYaml
         );
 
-        // mysql.yaml
+        // If we are using MySQL and Mongo, create Pods and Services for them
         if (useMySQL) {
+            // mysql.yaml (Pod)
             fs.writeFileSync(
                 path.join(helmDir, 'templates', 'mysql.yaml'),
                 `apiVersion: v1
@@ -370,10 +383,26 @@ spec:
     - containerPort: 3306
 `
             );
+
+            // mysql-service.yaml
+            fs.writeFileSync(
+                path.join(helmDir, 'templates', 'mysql-service.yaml'),
+                `apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+`
+            );
         }
 
-        // mongo.yaml
         if (useMongo) {
+            // mongo.yaml (Pod)
             fs.writeFileSync(
                 path.join(helmDir, 'templates', 'mongo.yaml'),
                 `apiVersion: v1
@@ -386,8 +415,29 @@ spec:
   containers:
   - name: mongo
     image: mongo:6.0
+    env:
+    - name: MONGO_INITDB_ROOT_USERNAME
+      value: "root"
+    - name: MONGO_INITDB_ROOT_PASSWORD
+      value: "rootpassword"
     ports:
     - containerPort: 27017
+`
+            );
+
+            // mongo-service.yaml
+            fs.writeFileSync(
+                path.join(helmDir, 'templates', 'mongo-service.yaml'),
+                `apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+spec:
+  selector:
+    app: mongo
+  ports:
+  - port: 27017
+    targetPort: 27017
 `
             );
         }
@@ -407,10 +457,10 @@ spec:
         await logStep(`Project ${project.project_uuid}, release ${deploymentId} rolled out successfully.`);
 
         if (frontendEnabled) {
-            await logStep(`Frontend URL: ${valuesObj.ingressHostFrontend}`)
+            await logStep(`Frontend URL: ${valuesObj.ingressHostFrontend}`);
         }
         if (backendEnabled) {
-            await logStep(`Backend URL:  ${valuesObj.ingressHostBackend}`)
+            await logStep(`Backend URL: ${valuesObj.ingressHostBackend}`);
         }
 
         // Success response
