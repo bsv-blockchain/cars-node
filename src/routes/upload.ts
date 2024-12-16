@@ -118,6 +118,12 @@ export default async (req: Request, res: Response) => {
       return res.status(400).json({ error: errMsg });
     }
 
+    if (carsConfig.network !== project.network) {
+      const errMsg = `Network mismatch: Project is on ${project.network} but deployment config specifies ${carsConfig.network}`;
+      await logStep(errMsg, 'error');
+      return res.status(400).json({ error: errMsg });
+    }
+
     const deployTargets = carsConfig.deploy || [];
     const backendEnabled = deployTargets.includes('backend');
     const frontendEnabled = deployTargets.includes('frontend');
