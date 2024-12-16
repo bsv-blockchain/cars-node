@@ -15,6 +15,9 @@ const TESTNET_PRIVATE_KEY = process.env.TESTNET_PRIVATE_KEY;
 if (!MAINNET_PRIVATE_KEY || !TESTNET_PRIVATE_KEY) {
     throw new Error('Missing CARS node testnet or mainnet private keys on startup.');
 }
+if (!process.env.TAAL_API_KEY_MAIN || !process.env.TAAL_API_KEY_TEST) {
+    throw new Error('TAAL API keys not configured');
+}
 const SERVER_BASEURL = process.env.SERVER_BASEURL || 'http://localhost:7777';
 const wallet = new ProtoWallet(new PrivateKey(MAINNET_PRIVATE_KEY, 16));
 

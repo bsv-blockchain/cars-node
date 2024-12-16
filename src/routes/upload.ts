@@ -286,6 +286,8 @@ spec:
           value: "true"
         - name: NETWORK
           value: "${carsConfig.network}"
+        - name: ARC_API_KEY
+          value: "${project.network === 'mainnet' ? process.env.TAAL_API_KEY_MAIN : process.env.TAAL_API_KEY_TEST}"
         - name: KNEX_URL
           value: "mysql://projectUser:projectPass@mysql:3306/projectdb"
         - name: MONGO_URL
