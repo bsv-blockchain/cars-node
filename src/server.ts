@@ -7,13 +7,16 @@ import { ProtoWallet, PrivateKey } from '@bsv/sdk';
 import routes from './routes';
 import upload from './routes/upload';
 import { initCluster } from './init-cluster';
+import { startCronJobs } from './cron';
 
 const port = parseInt(process.env.PORT || '7777', 10);
-const SERVER_PRIVATE_KEY =
-    process.env.SERVER_PRIVATE_KEY ||
-    '6dcc124be5f382be631d49ba12f61adbce33a5ac14f6ddee12de25272f943f8b';
+const MAINNET_PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY;
+const TESTNET_PRIVATE_KEY = process.env.TESTNET_PRIVATE_KEY;
+if (!MAINNET_PRIVATE_KEY || !TESTNET_PRIVATE_KEY) {
+    throw new Error('Missing CARS node testnet or mainnet private keys on startup.');
+}
 const SERVER_BASEURL = process.env.SERVER_BASEURL || 'http://localhost:7777';
-const wallet = new ProtoWallet(new PrivateKey(SERVER_PRIVATE_KEY, 16));
+const wallet = new ProtoWallet(new PrivateKey(MAINNET_PRIVATE_KEY, 16));
 
 async function main() {
     // Run migrations
@@ -22,6 +25,7 @@ async function main() {
     logger.info('Migrations completed.');
 
     await initCluster();
+    startCronJobs(db, wallet);
 
     const app = express();
 
@@ -116,7 +120,7 @@ async function main() {
 
     // Authrite middleware
     app.use(authrite.middleware({
-        serverPrivateKey: SERVER_PRIVATE_KEY,
+        serverPrivateKey: MAINNET_PRIVATE_KEY,
         baseUrl: SERVER_BASEURL,
         requestedCertificates: {
             types: {

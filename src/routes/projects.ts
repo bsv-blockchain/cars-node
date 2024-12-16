@@ -88,16 +88,28 @@ async function requireProjectAdminForDeploy(req: Request, res: Response, next: F
 router.post('/create', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
     const identityKey = (req as any).authrite.identityKey;
-    const { name } = req.body;
+    let { name, network, privateKey } = req.body;
     const projectId = crypto.randomBytes(16).toString('hex');
 
     execSync(`kubectl create namespace cars-project-${projectId} || true`, { stdio: 'inherit' });
     logger.info(`Namespace cars-project-${projectId} ensured.`);
 
+    // Generate a private key for the project
+    if (!privateKey) {
+        privateKey = crypto.randomBytes(32).toString('hex');
+    } else {
+        // Validate the provided private key: must be 64 lowercase hex characters
+        if (!/^[0-9a-f]{64}$/.test(privateKey)) {
+            return res.status(400).json({ error: 'Invalid private key' });
+        }
+    }
+
     const [projId] = await db('projects').insert({
         project_uuid: projectId,
         name: name || 'Unnamed Project',
-        balance: 0
+        balance: 0,
+        network: network === 'testnet' ? 'testnet' : 'mainnet',
+        private_key: privateKey
     }, ['id']).returning('id');
 
     await db('project_admins').insert({

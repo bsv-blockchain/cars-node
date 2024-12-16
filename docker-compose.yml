@@ -24,7 +24,8 @@ services:
       - "7777:7777"
     environment:
       PORT: 7777
-      SERVER_PRIVATE_KEY: "6dcc124be5f382be631d49ba12f61adbce33a5ac14f6ddee12de25272f943f8b"
+      MAINNET_PRIVATE_KEY: "7958c51a7ab73aaae5fc56173f65ba8a44d9b28d1224cd23ecd4f1b27aa1414d"
+      TESTNET_PRIVATE_KEY: "7958c51a7ab73aaae5fc56173f65ba8a44d9b28d1224cd23ecd4f1b27aa1414d"
       SERVER_BASEURL: "http://localhost:7777" # Where can people interact with CARS Clouud API?
       DATABASE_URL: "mysql://cars_user:cars_pass@mysql:3306/cars_db"
       LOG_LEVEL: "info"
