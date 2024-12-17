@@ -74,14 +74,14 @@ async function requireProjectAdmin(req: Request, res: Response, next: Function) 
 
 async function requireDeployment(req: Request, res: Response, next: Function) {
     const { db }: { db: Knex } = req as any;
-    const { deploymentId } = req.params;
+    const { deploymentId, projectId } = req.params;
     const deploy = await db('deploys').where({ deployment_uuid: deploymentId }).first();
     if (!deploy) {
         return res.status(404).json({ error: 'Deploy not found' });
     }
     const project = await db('projects').where({ id: deploy.project_id }).first();
-    if (!project) {
-        return res.status(404).json({ error: 'Project not found' });
+    if (!project || project.project_uuid !== projectId) {
+        return res.status(404).json({ error: 'Project not found for the given deployment' });
     }
     (req as any).deploy = deploy;
     (req as any).project = project;
@@ -102,7 +102,7 @@ async function requireProjectAdminForDeploy(req: Request, res: Response, next: F
 
 /**
  * Create a new project
- * @body { name: string }
+ * @body { name: string, network?: 'testnet'|'mainnet', privateKey?: string }
  */
 router.post('/create', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
@@ -113,7 +113,7 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
     execSync(`kubectl create namespace cars-project-${projectId} || true`, { stdio: 'inherit' });
     logger.info(`Namespace cars-project-${projectId} ensured.`);
 
-    // Generate a private key for the project
+    // Generate a private key for the project if not provided
     if (!privateKey) {
         privateKey = crypto.randomBytes(32).toString('hex');
     } else {
@@ -136,7 +136,6 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
         identity_key: identityKey
     });
 
-    // log project creation
     await db('logs').insert({
         project_id: projId.id,
         message: 'Project created'
@@ -147,7 +146,8 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
 });
 
 /**
- * List projects where user is admin. Return name, id, balance.
+ * List projects where user is admin.
+ * Returns project name, id, balance.
  */
 router.post('/list', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
@@ -162,7 +162,7 @@ router.post('/list', requireRegisteredUser, async (req: Request, res: Response) 
 });
 
 /**
- * Add Admin
+ * Add Admin to a project
  * @body { identityKey: string }
  */
 router.post('/:projectId/addAdmin', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
@@ -189,7 +189,7 @@ router.post('/:projectId/addAdmin', requireRegisteredUser, requireProject, requi
 });
 
 /**
- * Remove Admin
+ * Remove Admin from a project
  * @body { identityKey: string }
  */
 router.post('/:projectId/removeAdmin', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
@@ -216,7 +216,7 @@ router.post('/:projectId/removeAdmin', requireRegisteredUser, requireProject, re
 });
 
 /**
- * List admins
+ * List admins for a project
  */
 router.post('/:projectId/admins/list', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
@@ -227,7 +227,7 @@ router.post('/:projectId/admins/list', requireRegisteredUser, requireProject, re
 });
 
 /**
- * List deployments
+ * List deployments for a project
  */
 router.post('/:projectId/deploys/list', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
@@ -238,20 +238,8 @@ router.post('/:projectId/deploys/list', requireRegisteredUser, requireProject, r
 });
 
 /**
- * Show project logs
- */
-router.post('/:projectId/logs/show', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
-    const { db }: { db: Knex } = req as any;
-    const project = (req as any).project;
-
-    const logs = await db('logs').where({ project_id: project.id }).orderBy('timestamp', 'asc');
-    // Return logs as a single text for now
-    const joinedLogs = logs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
-    res.json({ logs: joinedLogs });
-});
-
-/**
- * Create a new deploy
+ * Create a new deploy for a project
+ * @returns { deploymentId, url } - URL for uploading release files.
  */
 router.post('/:projectId/deploy', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db, wallet }: { db: Knex, wallet: Wallet } = req as any;
@@ -294,19 +282,7 @@ router.post('/:projectId/deploy', requireRegisteredUser, async (req: Request, re
 });
 
 /**
- * Show deploy logs
- */
-router.post('/deploy/:deploymentId/logs/show', requireRegisteredUser, requireDeployment, requireProjectAdmin, async (req: Request, res: Response) => {
-    const { db }: { db: Knex } = req as any;
-    const deploy = (req as any).deploy;
-
-    const logs = await db('logs').where({ deploy_id: deploy.id }).orderBy('timestamp', 'asc');
-    const joinedLogs = logs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
-    res.json({ logs: joinedLogs });
-});
-
-/**
- * Set Web UI Config
+ * Set Web UI Config for a project
  * @body { config: object }
  */
 router.post('/:projectId/webui/config', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
@@ -319,9 +295,7 @@ router.post('/:projectId/webui/config', requireRegisteredUser, requireProject, r
     }
 
     try {
-        // Validate the config can be stringified
         JSON.stringify(config);
-
         await db('projects')
             .where({ id: project.id })
             .update({ web_ui_config: JSON.stringify(config) });
@@ -338,7 +312,8 @@ router.post('/:projectId/webui/config', requireRegisteredUser, requireProject, r
 });
 
 /**
- * Get project info and status
+ * Get project info and current cluster status
+ * - Checks namespace, pods, and ingress rules in Kubernetes.
  */
 router.post('/:projectId/info', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const project = (req as any).project;
@@ -353,17 +328,14 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
         };
 
         try {
-            // Get deployment info from running pods
             const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
             const pods = JSON.parse(podsOutput.toString());
 
-            // Find backend pod to get deployment ID
+            // Identify backend pod and extract deployment ID from its image tag
             const backendPod = pods.items.find((pod: any) =>
                 pod.metadata.labels?.app === `${project.project_uuid}-backend`
             );
-
             if (backendPod) {
-                // Extract deployment ID from image tag
                 const backendContainer = backendPod.spec.containers.find((c: any) => c.name === 'backend');
                 if (backendContainer) {
                     const imageTag = backendContainer.image.split(':')[1];
@@ -410,15 +382,85 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
 });
 
 /**
- * Get resource logs
- * @body resource: 'frontend' | 'backend' | 'mongo' | 'mysql'
- * @body since: '5m' | '15m' | '30m' | '1h' | '2h' | '6h' | '12h' | '1d' | '2d' | '7d'
- * @body tail: number (1-10000)
- * @body level: 'all' | 'error' | 'warn' | 'info'
+ * ==============================
+ * LOGGING ENDPOINTS
+ * ==============================
  */
-router.post('/:projectId/logs/resource', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+
+/**
+ * PROJECT LOGS (SYSTEM-LEVEL)
+ * Retrieve logs from the `logs` table that belong to the project but have no `deploy_id`.
+ * These logs represent system-level or administrative actions related to the project.
+ *
+ * Endpoint: POST /:projectId/logs/project
+ *
+ * Response:
+ *   { logs: string } - A joined string of logs.
+ */
+router.post('/:projectId/logs/project', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
     const project = (req as any).project;
-    const { resource, since = '1h', tail = 1000, level = 'all' } = req.body;
+
+    const logs = await db('logs')
+        .where({ project_id: project.id })
+        .whereNull('deploy_id')
+        .orderBy('timestamp', 'asc');
+
+    const joinedLogs = logs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
+    res.json({ logs: joinedLogs });
+});
+
+/**
+ * DEPLOYMENT LOGS
+ * Retrieve logs from the `logs` table that belong to a specific deployment.
+ * These logs represent events that occurred during or for that particular deployment.
+ *
+ * Endpoint: POST /:projectId/logs/deployment/:deploymentId
+ *
+ * Response:
+ *   { logs: string }
+ */
+router.post('/:projectId/logs/deployment/:deploymentId', requireRegisteredUser, requireProject, requireDeployment, requireProjectAdminForDeploy, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
+    const deploy = (req as any).deploy;
+
+    const logs = await db('logs')
+        .where({ deploy_id: deploy.id })
+        .orderBy('timestamp', 'asc');
+
+    const joinedLogs = logs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
+    res.json({ logs: joinedLogs });
+});
+
+/**
+ * RESOURCE LOGS (CLUSTER-LEVEL)
+ * Retrieve logs from Kubernetes pods for a given resource type within the project's namespace.
+ *
+ * Supported resources: 'frontend', 'backend', 'mongo', 'mysql'
+ * Filters:
+ *   - since: time period to look back (default: 1h)
+ *   - tail: number of lines (default: 1000)
+ *   - level: 'all', 'error', 'warn', 'info' (default: 'all')
+ *
+ * Endpoint: POST /:projectId/logs/resource/:resource
+ * Request Body:
+ *   {
+ *     since?: '5m' | '15m' | '30m' | '1h' | '2h' | '6h' | '12h' | '1d' | '2d' | '7d',
+ *     tail?: number,
+ *     level?: 'all' | 'error' | 'warn' | 'info'
+ *   }
+ *
+ * Response:
+ *   {
+ *     resource: string,
+ *     logs: string,
+ *     metadata: { podName: string, since: string, tail: number, level: string }
+ *   }
+ */
+router.post('/:projectId/logs/resource/:resource', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+    const { resource } = req.params;
+    const { since = '1h', tail = 1000, level = 'all' } = req.body;
 
     // Validate inputs
     if (!['frontend', 'backend', 'mongo', 'mysql'].includes(resource)) {
@@ -443,8 +485,6 @@ router.post('/:projectId/logs/resource', requireRegisteredUser, requireProject, 
 
     try {
         const namespace = `cars-project-${project.project_uuid}`;
-
-        // Get pod for the specific deployment
         const labelSelector = `app=${project.project_uuid}-${resource}`;
         const podsOutput = execSync(`kubectl get pods -n ${namespace} -l ${labelSelector} -o json`);
         const pods = JSON.parse(podsOutput.toString());
@@ -454,12 +494,10 @@ router.post('/:projectId/logs/resource', requireRegisteredUser, requireProject, 
         }
 
         const podName = pods.items[0].metadata.name;
-
-        // Build kubectl logs command with sanitized inputs
         const cmd = `kubectl logs -n ${namespace} ${podName} --since=${since} --tail=${sanitizedTail}`;
         const logs = execSync(cmd).toString();
 
-        // Filter by log level if needed
+        // Filter logs by level if required
         let filteredLogs = logs;
         if (level !== 'all') {
             const levelPattern = new RegExp(`\\b${level.toUpperCase()}\\b`, 'i');
@@ -482,81 +520,6 @@ router.post('/:projectId/logs/resource', requireRegisteredUser, requireProject, 
     } catch (error: any) {
         logger.error({ error: error.message }, 'Error getting resource logs');
         res.status(500).json({ error: 'Failed to get resource logs' });
-    }
-});
-
-/**
- * Get aggregated logs across all resources
- * @body since: '5m' | '15m' | '30m' | '1h' | '2h' | '6h' | '12h' | '1d' | '2d' | '7d'
- * @body tail: number (1-10000)
- * @body level: 'all' | 'error' | 'warn' | 'info'
- */
-router.post('/:projectId/logs/all', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
-    const project = (req as any).project;
-    const { since = '1h', tail = 1000, level = 'all' } = req.body;
-
-    if (!isValidLogPeriod(since)) {
-        return res.status(400).json({
-            error: 'Invalid time period',
-            validPeriods: VALID_LOG_PERIODS
-        });
-    }
-
-    if (!isValidLogLevel(level)) {
-        return res.status(400).json({
-            error: 'Invalid log level',
-            validLevels: VALID_LOG_LEVELS
-        });
-    }
-
-    const sanitizedTail = sanitizeTailValue(tail);
-
-    try {
-        const namespace = `cars-project-${project.project_uuid}`;
-
-        // Get all pods in the namespace
-        const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
-        const pods = JSON.parse(podsOutput.toString());
-
-        const allLogs: { [key: string]: string } = {};
-
-        // Get logs from each pod
-        for (const pod of pods.items) {
-            const podName = pod.metadata.name;
-            const resource = pod.metadata.labels.app?.replace(`${project.project_uuid}-`, '');
-
-            if (!resource) continue;
-
-            const cmd = `kubectl logs -n ${namespace} ${podName} --since=${since} --tail=${sanitizedTail}`;
-
-            try {
-                let logs = execSync(cmd).toString();
-
-                if (level !== 'all') {
-                    const levelPattern = new RegExp(`\\b${level.toUpperCase()}\\b`, 'i');
-                    logs = logs
-                        .split('\n')
-                        .filter(line => levelPattern.test(line))
-                        .join('\n');
-                }
-
-                allLogs[resource] = logs;
-            } catch (e: any) {
-                allLogs[resource] = `Error getting logs: ${e.message}`;
-            }
-        }
-
-        res.json({
-            logs: allLogs,
-            metadata: {
-                since,
-                tail: sanitizedTail,
-                level
-            }
-        });
-    } catch (error: any) {
-        logger.error({ error: error.message }, 'Error getting aggregated logs');
-        res.status(500).json({ error: 'Failed to get aggregated logs' });
     }
 });
 

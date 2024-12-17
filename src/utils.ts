@@ -1,17 +1,3 @@
-import { Request } from 'express';
-import path from 'path';
-
-export type AuthRequest = Request & {
-    authrite?: {
-        identityKey: string
-        certificates: Array<{
-            type: string
-            certifier: string
-            decryptedFields: Record<string, string>
-        }>
-    }
-}
-
 export interface CARSConfigInfo {
     schema: string;
     schemaVersion: string;
