@@ -286,4 +286,36 @@ router.post('/deploy/:deploymentId/logs/show', requireRegisteredUser, requireDep
     res.json({ logs: joinedLogs });
 });
 
+/**
+ * Set Web UI Config
+ * @body { config: object }
+ */
+router.post('/:projectId/webui/config', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
+    const project = (req as any).project;
+    const { config } = req.body;
+
+    if (!config || typeof config !== 'object') {
+        return res.status(400).json({ error: 'Invalid config - must be an object' });
+    }
+
+    try {
+        // Validate the config can be stringified
+        JSON.stringify(config);
+
+        await db('projects')
+            .where({ id: project.id })
+            .update({ web_ui_config: JSON.stringify(config) });
+
+        await db('logs').insert({
+            project_id: project.id,
+            message: 'Web UI config updated'
+        });
+
+        res.json({ message: 'Web UI config updated' });
+    } catch (error) {
+        return res.status(400).json({ error: 'Invalid config - must be JSON serializable' });
+    }
+});
+
 export default router;

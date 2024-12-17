@@ -292,6 +292,8 @@ spec:
           value: "mysql://projectUser:projectPass@mysql:3306/projectdb"
         - name: MONGO_URL
           value: "mongodb://root:rootpassword@mongo:27017/admin"
+        - name: WEB_UI_CONFIG
+          value: "${project.web_ui_config || ''}"
         ports:
         - containerPort: 8080
       {{- end }}

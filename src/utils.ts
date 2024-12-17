@@ -51,6 +51,13 @@ const main = async () => {
     if (process.env.ARC_API_KEY) {
       server.configureArcApiKey(process.env.ARC_API_KEY!)
     }
+    if (process.env.WEB_UI_CONFIG) {
+      try {
+        server.configureWebUI(JSON.parse(process.env.WEB_UI_CONFIG!))
+      } catch (e) {
+        console.error('Failed to parse WEB_UI_CONFIG:', e);
+      }
+    }
 `;
     // For each topic manager
     for (const [name, pathToTm] of Object.entries(info.topicManagers || {})) {
