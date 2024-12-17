@@ -3,7 +3,6 @@
     "version": "1.0.0",
     "main": "dist/index.js",
     "scripts": {
-        "setup": "tsx scripts/setup.ts",
         "start:dev": "tsx watch src/server.ts",
         "start:prod": "tsx src/server.ts"
     },
