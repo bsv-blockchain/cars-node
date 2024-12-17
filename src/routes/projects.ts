@@ -485,17 +485,26 @@ router.post('/:projectId/logs/resource/:resource', requireRegisteredUser, requir
 
     try {
         const namespace = `cars-project-${project.project_uuid}`;
-        const labelSelector = `app=${project.project_uuid}-${resource}`;
-        const podsOutput = execSync(`kubectl get pods -n ${namespace} -l ${labelSelector} -o json`);
+        const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
         const pods = JSON.parse(podsOutput.toString());
 
         if (!pods.items?.length) {
             return res.status(404).json({ error: `No ${resource} pods found` });
         }
 
-        const podName = pods.items[0].metadata.name;
-        const cmd = `kubectl logs -n ${namespace} ${podName} --since=${since} --tail=${sanitizedTail}`;
-        const logs = execSync(cmd).toString();
+        let logs
+        if (resource === 'mongo' || resource === 'mysql') {
+            const cmd = `kubectl logs -n ${namespace} ${resource} --since=${since} --tail=${sanitizedTail}`;
+            logs = execSync(cmd).toString();
+        } else {
+            const pod = pods.items.find(x => x.metadata.name.startsWith('cars-project-'));
+            if (!pod) {
+                return res.status(404).json({ error: `No ${resource} pods found` });
+            }
+            const cmd = `kubectl logs -n ${namespace} ${pod.metadata.name} -c ${resource} --since=${since} --tail=${sanitizedTail}`;
+            console.log(cmd)
+            logs = execSync(cmd).toString();
+        }
 
         // Filter logs by level if required
         let filteredLogs = logs;
@@ -511,7 +520,6 @@ router.post('/:projectId/logs/resource/:resource', requireRegisteredUser, requir
             resource,
             logs: filteredLogs,
             metadata: {
-                podName,
                 since,
                 tail: sanitizedTail,
                 level
