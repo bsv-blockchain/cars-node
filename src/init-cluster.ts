@@ -16,15 +16,39 @@ export async function initCluster() {
         await new Promise(r => setTimeout(r, 5000));
     }
 
-    // Install ingress-nginx if not installed
+    // Remove any existing Traefik ingress controller if present (common in k3s)
+    try {
+        logger.info('Ensuring no other ingress controllers (like Traefik) exist...');
+        // If k3s default traefik HelmChart exists, remove it:
+        // This is often how k3s manages traefik: as a HelmChart resource in kube-system
+        execSync('kubectl delete helmchart traefik -n kube-system --ignore-not-found=true', { stdio: 'inherit' });
+
+        // Delete any traefik deployments/services just in case:
+        execSync('kubectl delete deployment traefik -n kube-system --ignore-not-found=true', { stdio: 'inherit' });
+        execSync('kubectl delete svc traefik -n kube-system --ignore-not-found=true', { stdio: 'inherit' });
+
+        // Remove traefik ingressclasses if any
+        execSync('kubectl delete ingressclass traefik --ignore-not-found=true', { stdio: 'inherit' });
+        execSync('kubectl delete ingressclass traefik-ingress-class --ignore-not-found=true', { stdio: 'inherit' });
+
+        // Remove any other non-nginx ingresscontrollers (if known)
+        // For example, if there's another known ingress class, remove it similarly:
+        // execSync('kubectl delete ingressclass some-other-ingress --ignore-not-found=true', { stdio: 'inherit' });
+
+        logger.info('All non-nginx ingress controllers removed or not found.');
+    } catch (e) {
+        logger.error(e, 'Failed to remove other ingress controllers');
+    }
+
+    // Install ingress-nginx and make it the default ingress class
+    // Setting `--set controller.ingressClassResource.default=true` ensures this ingress is the default.
     try {
         execSync('helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx', { stdio: 'inherit' });
         execSync('helm repo update', { stdio: 'inherit' });
-        // Try to install or upgrade ingress-nginx in a dedicated namespace
-        execSync('helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --create-namespace -n ingress-nginx', { stdio: 'inherit' });
-        logger.info('Ingress-nginx installed or updated.');
+        execSync('helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --create-namespace -n ingress-nginx --set controller.ingressClassResource.default=true', { stdio: 'inherit' });
+        logger.info('Ingress-nginx installed or updated, set as default.');
     } catch (e) {
-        logger.error(e, 'Failed to install ingress-nginx');
+        logger.error(e, 'Failed to install or set ingress-nginx as default');
     }
 
     // Create a global namespace for CARS if needed

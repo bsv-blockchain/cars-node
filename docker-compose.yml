@@ -3,10 +3,10 @@ services:
     image: mysql:8.0
     container_name: cars-mysql
     environment:
-      MYSQL_DATABASE: cars_db
-      MYSQL_USER: cars_user
-      MYSQL_PASSWORD: cars_pass
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     ports:
       - "3306:3306" # No need to open this up in production, only here for development.
     volumes:
@@ -24,12 +24,14 @@ services:
       - "7777:7777"
     environment:
       PORT: 7777
-      MAINNET_PRIVATE_KEY: "7958c51a7ab73aaae5fc56173f65ba8a44d9b28d1224cd23ecd4f1b27aa1414d"
-      TESTNET_PRIVATE_KEY: "7958c51a7ab73aaae5fc56173f65ba8a44d9b28d1224cd23ecd4f1b27aa1414d"
-      SERVER_BASEURL: "http://localhost:7777" # Where can people interact with CARS Clouud API?
-      DATABASE_URL: "mysql://cars_user:cars_pass@mysql:3306/cars_db"
+      MAINNET_PRIVATE_KEY: ${MAINNET_PRIVATE_KEY}
+      TESTNET_PRIVATE_KEY: ${TESTNET_PRIVATE_KEY}
+      TAAL_API_KEY_MAIN: ${TAAL_API_KEY_MAIN}
+      TAAL_API_KEY_TEST: ${TAAL_API_KEY_TEST}
+      SERVER_BASEURL: "http://localhost:7777"
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
       LOG_LEVEL: "info"
-      K3S_TOKEN: "cars-token"
+      K3S_TOKEN: ${K3S_TOKEN}
       KUBECONFIG: "/kubeconfig/kubeconfig.yaml"
       DOCKER_HOST: "tcp://dind:2375"
       DOCKER_REGISTRY: "cars-registry:5000"
@@ -60,7 +62,7 @@ services:
     environment:
       K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
       K3S_KUBECONFIG_MODE: "666"
-      K3S_TOKEN: "cars-token"
+      K3S_TOKEN: ${K3S_TOKEN}
     volumes:
       - k3s-server:/var/lib/rancher/k3s
       - ./local-data/kubeconfig:/output
