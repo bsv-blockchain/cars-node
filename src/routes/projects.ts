@@ -4,6 +4,7 @@ import logger from '../logger';
 import type { Knex } from 'knex';
 import { Utils, Wallet } from '@bsv/sdk';
 import { execSync } from 'child_process';
+import dns from 'dns/promises';
 
 const router = Router();
 
@@ -529,6 +530,82 @@ router.post('/:projectId/logs/resource/:resource', requireRegisteredUser, requir
         logger.error({ error: error.message }, 'Error getting resource logs');
         res.status(500).json({ error: 'Failed to get resource logs' });
     }
+});
+
+/**
+ * Helper to validate and set a custom domain (for either frontend or backend).
+ * This function:
+ * - Validates domain format
+ * - Queries DNS TXT records for `cars_project.<domain>`
+ * - Expects a TXT record: cars-project-verification=<project_uuid>:<type>
+ * - If not present, returns instructions. If present and correct, updates DB.
+ */
+async function handleCustomDomain(
+    req: Request,
+    res: Response,
+    domainType: 'frontend' | 'backend'
+) {
+    const { db }: { db: Knex } = req as any;
+    const project = (req as any).project;
+
+    const { domain } = req.body;
+    if (!domain || typeof domain !== 'string' || !domain.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
+        return res.status(400).json({ error: 'Invalid domain format. Please provide a valid domain (e.g. example.com)' });
+    }
+
+    // The expected TXT record
+    const expectedRecord = `cars-project-verification=${project.project_uuid}:${domainType}`;
+
+    const verificationHost = `cars_project.${domain}`;
+
+    try {
+        // Lookup TXT records
+        const txtRecords = await dns.resolveTxt(verificationHost);
+
+        // Flatten and search for our record
+        const found = txtRecords.some(recordSet => recordSet.includes(expectedRecord));
+        if (!found) {
+            // Not found, return instructions
+            const instructions = `Please create a DNS TXT record at:\n\n  ${verificationHost}\n\nWith the exact value:\n\n  ${expectedRecord}\n\nOnce this TXT record is in place, please try again.`;
+            return res.status(400).json({ error: 'DNS verification failed', instructions });
+        }
+
+        // If found, update the database
+        const updateField = domainType === 'frontend' ? 'frontend_custom_domain' : 'backend_custom_domain';
+        await db('projects')
+            .where({ id: project.id })
+            .update({ [updateField]: domain });
+
+        await db('logs').insert({
+            project_id: project.id,
+            message: `${domainType.charAt(0).toUpperCase() + domainType.slice(1)} custom domain set: ${domain}`
+        });
+
+        return res.json({ message: `${domainType.charAt(0).toUpperCase() + domainType.slice(1)} custom domain verified and set`, domain });
+    } catch (err: any) {
+        // DNS query failed or some other error
+        logger.error({ err: err.message }, 'Error during DNS verification process');
+        const instructions = `Please ensure that DNS is functioning and that you create a TXT record:\n\n  ${verificationHost}\n\nWith the value:\n\n  ${expectedRecord}\n\nThen try again.`;
+        return res.status(500).json({ error: 'Failed to verify domain', instructions });
+    }
+}
+
+/**
+ * Set or verify a frontend custom domain for the project.
+ * Body: { domain: string }
+ * If DNS record is correct, updates database. Otherwise returns instructions.
+ */
+router.post('/:projectId/domains/frontend', requireRegisteredUser, requireProject, requireProjectAdmin, (req: Request, res: Response) => {
+    return handleCustomDomain(req, res, 'frontend');
+});
+
+/**
+ * Set or verify a backend custom domain for the project.
+ * Body: { domain: string }
+ * If DNS record is correct, updates database. Otherwise returns instructions.
+ */
+router.post('/:projectId/domains/backend', requireRegisteredUser, requireProject, requireProjectAdmin, (req: Request, res: Response) => {
+    return handleCustomDomain(req, res, 'backend');
 });
 
 export default router;

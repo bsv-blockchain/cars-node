@@ -19,6 +19,8 @@ export async function up(knex: Knex): Promise<void> {
         table.decimal('balance', 20, 8).defaultTo(0);
         table.string('web_ui_config');
         table.timestamp('created_at').defaultTo(knex.fn.now());
+        table.string('frontend_custom_domain');
+        table.string('backend_custom_domain');
     });
 
     // Project admins

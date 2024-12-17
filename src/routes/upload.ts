@@ -233,7 +233,9 @@ description: A chart to deploy a CARS project
       backendImage,
       frontendImage,
       ingressHostFrontend: `frontend.${ingressHost}`,
+      ingressCustomFrontend: project.frontend_custom_domain,
       ingressHostBackend: `backend.${ingressHost}`,
+      ingressCustomBackend: project.backend_custom_domain,
       useMySQL,
       useMongo
     };
@@ -352,6 +354,19 @@ spec:
             port:
               number: 80
 `
+      if (project.frontend_custom_domain) {
+        ingressYaml += `  - host: {{ .Values.ingressCustomFrontend }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "cars-project.fullname" . }}-service
+            port:
+              number: 80
+`
+      }
     }
     if (backendEnabled) {
       ingressYaml += `  - host: {{ .Values.ingressHostBackend }}
@@ -365,6 +380,19 @@ spec:
             port:
               number: 8080
 `
+      if (project.backend_custom_domain) {
+        ingressYaml += `  - host: {{ .Values.ingressCustomBackend }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "cars-project.fullname" . }}-service
+            port:
+              number: 8080
+`
+      }
     }
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'ingress.yaml'),
