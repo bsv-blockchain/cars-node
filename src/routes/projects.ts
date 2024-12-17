@@ -7,6 +7,25 @@ import { execSync } from 'child_process';
 
 const router = Router();
 
+const VALID_LOG_PERIODS = ['5m', '15m', '30m', '1h', '2h', '6h', '12h', '1d', '2d', '7d'] as const;
+const VALID_LOG_LEVELS = ['all', 'error', 'warn', 'info'] as const;
+const MAX_TAIL_LINES = 10000;
+
+type LogPeriod = typeof VALID_LOG_PERIODS[number];
+type LogLevel = typeof VALID_LOG_LEVELS[number];
+
+function isValidLogPeriod(period: string): period is LogPeriod {
+    return VALID_LOG_PERIODS.includes(period as LogPeriod);
+}
+
+function isValidLogLevel(level: string): level is LogLevel {
+    return VALID_LOG_LEVELS.includes(level as LogLevel);
+}
+
+function sanitizeTailValue(tail: number): number {
+    return Math.min(Math.max(1, Math.floor(tail)), MAX_TAIL_LINES);
+}
+
 /**
  * Middleware to ensure user is registered
  */
@@ -315,6 +334,229 @@ router.post('/:projectId/webui/config', requireRegisteredUser, requireProject, r
         res.json({ message: 'Web UI config updated' });
     } catch (error) {
         return res.status(400).json({ error: 'Invalid config - must be JSON serializable' });
+    }
+});
+
+/**
+ * Get project info and status
+ */
+router.post('/:projectId/info', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+
+    try {
+        const namespace = `cars-project-${project.project_uuid}`;
+        const status = {
+            online: false,
+            lastChecked: new Date(),
+            domains: { ssl: false } as { frontend?: string; backend?: string; ssl: boolean },
+            deploymentId: null as string | null
+        };
+
+        try {
+            // Get deployment info from running pods
+            const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
+            const pods = JSON.parse(podsOutput.toString());
+
+            // Find backend pod to get deployment ID
+            const backendPod = pods.items.find((pod: any) =>
+                pod.metadata.labels?.app === `${project.project_uuid}-backend`
+            );
+
+            if (backendPod) {
+                // Extract deployment ID from image tag
+                const backendContainer = backendPod.spec.containers.find((c: any) => c.name === 'backend');
+                if (backendContainer) {
+                    const imageTag = backendContainer.image.split(':')[1];
+                    status.deploymentId = imageTag;
+                }
+            }
+
+            // Check if all pods are running and ready
+            status.online = pods.items.length > 0 && pods.items.every((pod: any) =>
+                pod.status.phase === 'Running' &&
+                pod.status.containerStatuses?.every((container: any) => container.ready)
+            );
+
+            // Get ingress info
+            const ingressOutput = execSync(`kubectl get ingress -n ${namespace} -o json`);
+            const ingress = JSON.parse(ingressOutput.toString());
+
+            ingress.items.forEach((ing: any) => {
+                ing.spec.rules.forEach((rule: any) => {
+                    const host = rule.host;
+                    if (host.startsWith('frontend.')) {
+                        status.domains.frontend = host;
+                    } else if (host.startsWith('backend.')) {
+                        status.domains.backend = host;
+                    }
+                });
+                status.domains.ssl = ing.spec.tls?.length > 0;
+            });
+
+        } catch (error: any) {
+            logger.error({ error: error.message }, 'Error checking project status');
+        }
+
+        res.json({
+            id: project.project_uuid,
+            name: project.name,
+            network: project.network,
+            status
+        });
+    } catch (error: any) {
+        logger.error({ error: error.message }, 'Error getting project info');
+        res.status(500).json({ error: 'Failed to get project info' });
+    }
+});
+
+/**
+ * Get resource logs
+ * @body resource: 'frontend' | 'backend' | 'mongo' | 'mysql'
+ * @body since: '5m' | '15m' | '30m' | '1h' | '2h' | '6h' | '12h' | '1d' | '2d' | '7d'
+ * @body tail: number (1-10000)
+ * @body level: 'all' | 'error' | 'warn' | 'info'
+ */
+router.post('/:projectId/logs/resource', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+    const { resource, since = '1h', tail = 1000, level = 'all' } = req.body;
+
+    // Validate inputs
+    if (!['frontend', 'backend', 'mongo', 'mysql'].includes(resource)) {
+        return res.status(400).json({ error: 'Invalid resource type' });
+    }
+
+    if (!isValidLogPeriod(since)) {
+        return res.status(400).json({
+            error: 'Invalid time period',
+            validPeriods: VALID_LOG_PERIODS
+        });
+    }
+
+    if (!isValidLogLevel(level)) {
+        return res.status(400).json({
+            error: 'Invalid log level',
+            validLevels: VALID_LOG_LEVELS
+        });
+    }
+
+    const sanitizedTail = sanitizeTailValue(tail);
+
+    try {
+        const namespace = `cars-project-${project.project_uuid}`;
+
+        // Get pod for the specific deployment
+        const labelSelector = `app=${project.project_uuid}-${resource}`;
+        const podsOutput = execSync(`kubectl get pods -n ${namespace} -l ${labelSelector} -o json`);
+        const pods = JSON.parse(podsOutput.toString());
+
+        if (!pods.items?.length) {
+            return res.status(404).json({ error: `No ${resource} pods found` });
+        }
+
+        const podName = pods.items[0].metadata.name;
+
+        // Build kubectl logs command with sanitized inputs
+        const cmd = `kubectl logs -n ${namespace} ${podName} --since=${since} --tail=${sanitizedTail}`;
+        const logs = execSync(cmd).toString();
+
+        // Filter by log level if needed
+        let filteredLogs = logs;
+        if (level !== 'all') {
+            const levelPattern = new RegExp(`\\b${level.toUpperCase()}\\b`, 'i');
+            filteredLogs = logs
+                .split('\n')
+                .filter(line => levelPattern.test(line))
+                .join('\n');
+        }
+
+        res.json({
+            resource,
+            logs: filteredLogs,
+            metadata: {
+                podName,
+                since,
+                tail: sanitizedTail,
+                level
+            }
+        });
+    } catch (error: any) {
+        logger.error({ error: error.message }, 'Error getting resource logs');
+        res.status(500).json({ error: 'Failed to get resource logs' });
+    }
+});
+
+/**
+ * Get aggregated logs across all resources
+ * @body since: '5m' | '15m' | '30m' | '1h' | '2h' | '6h' | '12h' | '1d' | '2d' | '7d'
+ * @body tail: number (1-10000)
+ * @body level: 'all' | 'error' | 'warn' | 'info'
+ */
+router.post('/:projectId/logs/all', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+    const { since = '1h', tail = 1000, level = 'all' } = req.body;
+
+    if (!isValidLogPeriod(since)) {
+        return res.status(400).json({
+            error: 'Invalid time period',
+            validPeriods: VALID_LOG_PERIODS
+        });
+    }
+
+    if (!isValidLogLevel(level)) {
+        return res.status(400).json({
+            error: 'Invalid log level',
+            validLevels: VALID_LOG_LEVELS
+        });
+    }
+
+    const sanitizedTail = sanitizeTailValue(tail);
+
+    try {
+        const namespace = `cars-project-${project.project_uuid}`;
+
+        // Get all pods in the namespace
+        const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
+        const pods = JSON.parse(podsOutput.toString());
+
+        const allLogs: { [key: string]: string } = {};
+
+        // Get logs from each pod
+        for (const pod of pods.items) {
+            const podName = pod.metadata.name;
+            const resource = pod.metadata.labels.app?.replace(`${project.project_uuid}-`, '');
+
+            if (!resource) continue;
+
+            const cmd = `kubectl logs -n ${namespace} ${podName} --since=${since} --tail=${sanitizedTail}`;
+
+            try {
+                let logs = execSync(cmd).toString();
+
+                if (level !== 'all') {
+                    const levelPattern = new RegExp(`\\b${level.toUpperCase()}\\b`, 'i');
+                    logs = logs
+                        .split('\n')
+                        .filter(line => levelPattern.test(line))
+                        .join('\n');
+                }
+
+                allLogs[resource] = logs;
+            } catch (e: any) {
+                allLogs[resource] = `Error getting logs: ${e.message}`;
+            }
+        }
+
+        res.json({
+            logs: allLogs,
+            metadata: {
+                since,
+                tail: sanitizedTail,
+                level
+            }
+        });
+    } catch (error: any) {
+        logger.error({ error: error.message }, 'Error getting aggregated logs');
+        res.status(500).json({ error: 'Failed to get aggregated logs' });
     }
 });
 
