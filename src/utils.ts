@@ -37,7 +37,7 @@ import OverlayExpress from '@bsv/overlay-express'
     let mainFunction = `
 const main = async () => {
     const server = new OverlayExpress(
-        \`LARS\`,
+        \`CARS\`,
         process.env.SERVER_PRIVATE_KEY!,
         process.env.HOSTING_URL!
     )

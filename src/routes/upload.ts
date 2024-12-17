@@ -338,10 +338,10 @@ metadata:
   name: {{ include "cars-project.fullname" . }}-ingress
 spec:
   ingressClassName: nginx
-  rules:`
+  rules:
+`
     if (frontendEnabled) {
-      ingressYaml += `
-  - host: {{ .Values.ingressHostFrontend }}
+      ingressYaml += `  - host: {{ .Values.ingressHostFrontend }}
     http:
       paths:
       - path: /
@@ -350,11 +350,11 @@ spec:
           service:
             name: {{ include "cars-project.fullname" . }}-service
             port:
-              number: 80`
+              number: 80
+`
     }
     if (backendEnabled) {
-      ingressYaml += `
-  - host: {{ .Values.ingressHostBackend }}
+      ingressYaml += `  - host: {{ .Values.ingressHostBackend }}
     http:
       paths:
       - path: /
@@ -363,7 +363,8 @@ spec:
           service:
             name: {{ include "cars-project.fullname" . }}-service
             port:
-              number: 8080`
+              number: 8080
+`
     }
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'ingress.yaml'),

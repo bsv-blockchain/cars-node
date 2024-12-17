@@ -28,7 +28,7 @@ async function main() {
     logger.info('Migrations completed.');
 
     await initCluster();
-    startCronJobs(db, wallet);
+    await startCronJobs(db, wallet);
 
     const app = express();
 
