@@ -18,7 +18,6 @@ RUN npm install
 
 # Copy the rest of the code
 COPY src ./src
-COPY scripts ./scripts
 COPY wait-for-services.sh /wait-for-services.sh
 
 RUN chmod +x /wait-for-services.sh

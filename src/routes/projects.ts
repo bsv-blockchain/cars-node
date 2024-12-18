@@ -586,7 +586,7 @@ async function handleCustomDomain(
         // DNS query failed or some other error
         logger.error({ err: err.message }, 'Error during DNS verification process');
         const instructions = `Please ensure that DNS is functioning and that you create a TXT record:\n\n  ${verificationHost}\n\nWith the value:\n\n  ${expectedRecord}\n\nThen try again.`;
-        return res.status(500).json({ error: 'Failed to verify domain', instructions });
+        return res.status(400).json({ error: 'Failed to verify domain', instructions });
     }
 }
 
