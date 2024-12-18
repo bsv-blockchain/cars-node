@@ -96,4 +96,23 @@ spec:
     } catch (e) {
         logger.error(e, 'Failed to create ClusterIssuer for Let\'s Encrypt');
     }
+
+    // Install kube-prometheus-stack for metrics and monitoring
+    try {
+        execSync('helm repo add prometheus-community https://prometheus-community.github.io/helm-charts', { stdio: 'inherit' });
+        execSync('helm repo update', { stdio: 'inherit' });
+        // Values can be customized if needed. We'll rely on defaults that scrape all namespaces.
+        execSync(`
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+          --create-namespace -n monitoring \
+          --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+          --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
+          --set global.scrape_interval=30s \
+          --set global.scrape_timeout=10s
+        `, { stdio: 'inherit' });
+
+        logger.info('kube-prometheus-stack installed. Prometheus now scrapes the cluster metrics.');
+    } catch (e) {
+        logger.error(e, 'Failed to install kube-prometheus-stack');
+    }
 }

@@ -37,6 +37,9 @@ services:
       DOCKER_REGISTRY: "cars-registry:5000"
       PROJECT_DEPLOYMENT_DNS_NAME: "localhost" # Where will projects be deployed online?
       CERT_ISSUANCE_EMAIL: ${CERT_ISSUANCE_EMAIL}
+      PROMETHEUS_URL: ${PROMETHEUS_URL}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      FROM_EMAIL: ${FROM_EMAIL}
     depends_on:
       - mysql
     volumes:

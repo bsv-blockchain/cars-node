@@ -4,6 +4,7 @@ import logger from './logger';
 import type { Knex } from 'knex';
 import type { Wallet } from '@bsv/sdk';
 import { checkAndIssueCertificates } from './utils/SSLManager';
+import { billProjects } from './utils/billing';
 
 export function startCronJobs(db: Knex, wallet: Wallet) {
     // Check project keys every 5 minutes
@@ -20,6 +21,11 @@ export function startCronJobs(db: Knex, wallet: Wallet) {
                 await checkAndIssueCertificates();
             } catch (error) {
                 logger.error('Error in SSL certificates cron job', error);
+            }
+            try {
+                await billProjects();
+            } catch (error) {
+                logger.error('Error in project billing cron job', error);
             }
         },
         null,
