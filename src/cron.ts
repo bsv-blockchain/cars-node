@@ -10,7 +10,7 @@ export function startCronJobs(db: Knex, wallet: Wallet) {
     new CronJob(
         '*/5 * * * *',
         async () => {
-            logger.log('Running cron jobs')
+            logger.info('Running cron jobs')
             try {
                 await checkAndFundProjectKeys(db, wallet);
             } catch (error) {

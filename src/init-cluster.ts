@@ -71,7 +71,8 @@ export async function initCluster() {
 
     // Create a ClusterIssuer for Let's Encrypt
     // In production, use the production server. For testing, you may use the staging server.
-    const clusterIssuer = `apiVersion: cert-manager.io/v1
+    const clusterIssuer = `
+apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
   name: letsencrypt-production
@@ -87,7 +88,10 @@ spec:
             class: nginx
 `;
     try {
-        execSync('kubectl apply -f -', { input: clusterIssuer, stdio: 'inherit' });
+        execSync('kubectl apply -f -', {
+            input: clusterIssuer,
+            stdio: ['pipe', 'inherit', 'inherit']
+        });
         logger.info('ClusterIssuer letsencrypt-production created.');
     } catch (e) {
         logger.error(e, 'Failed to create ClusterIssuer for Let\'s Encrypt');
