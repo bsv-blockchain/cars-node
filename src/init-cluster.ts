@@ -126,8 +126,9 @@ metadata:
   name: prometheus-ingress
   namespace: monitoring
   annotations:
-    # Assuming cert-manager is being used and a ClusterIssuer named letsencrypt-production is present
     cert-manager.io/cluster-issuer: "letsencrypt-production"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   tls:
