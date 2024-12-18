@@ -58,4 +58,38 @@ export async function initCluster() {
     } catch (e) {
         logger.error(e, 'Failed to ensure cars-global namespace');
     }
+
+    // Install cert-manager
+    try {
+        execSync('helm repo add jetstack https://charts.jetstack.io', { stdio: 'inherit' });
+        execSync('helm repo update', { stdio: 'inherit' });
+        execSync('helm upgrade --install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set installCRDs=true', { stdio: 'inherit' });
+        logger.info('cert-manager installed.');
+    } catch (e) {
+        logger.error(e, 'Failed to install cert-manager');
+    }
+
+    // Create a ClusterIssuer for Let's Encrypt
+    // In production, use the production server. For testing, you may use the staging server.
+    const clusterIssuer = `apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-production
+spec:
+  acme:
+    email: "${process.env.CERT_ISSUANCE_EMAIL}"
+    server: "https://acme-v02.api.letsencrypt.org/directory"
+    privateKeySecretRef:
+      name: letsencrypt-production
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+`;
+    try {
+        execSync('kubectl apply -f -', { input: clusterIssuer, stdio: 'inherit' });
+        logger.info('ClusterIssuer letsencrypt-production created.');
+    } catch (e) {
+        logger.error(e, 'Failed to create ClusterIssuer for Let\'s Encrypt');
+    }
 }

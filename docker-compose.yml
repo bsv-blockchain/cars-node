@@ -36,6 +36,7 @@ services:
       DOCKER_HOST: "tcp://dind:2375"
       DOCKER_REGISTRY: "cars-registry:5000"
       PROJECT_DEPLOYMENT_DNS_NAME: "localhost" # Where will projects be deployed online?
+      CERT_ISSUANCE_EMAIL: ${CERT_ISSUANCE_EMAIL}
     depends_on:
       - mysql
     volumes:
