@@ -115,4 +115,47 @@ spec:
     } catch (e) {
         logger.error(e, 'Failed to install kube-prometheus-stack');
     }
+
+    // Configure Prometheus ingress
+    try {
+        const projectsDomain = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
+        const ingressYaml = `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus-ingress
+  namespace: monitoring
+  annotations:
+    # Assuming cert-manager is being used and a ClusterIssuer named letsencrypt-production is present
+    cert-manager.io/cluster-issuer: "letsencrypt-production"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+      - prometheus.${projectsDomain}
+      secretName: prometheus-tls
+  rules:
+    - host: prometheus.${projectsDomain}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # This is the Prometheus server service name deployed by kube-prometheus-stack
+                name: kube-prometheus-stack-prometheus
+                port:
+                  number: 9090
+`;
+
+        // Apply the Ingress
+        execSync('kubectl apply -f -', {
+            input: ingressYaml,
+            stdio: ['pipe', 'inherit', 'inherit']
+        });
+
+        logger.info('Prometheus ingress applied. Prometheus now available externally at prometheus.' + projectsDomain);
+    } catch (e) {
+        logger.error(e, 'Failed to apply Prometheus ingress');
+    }
 }
