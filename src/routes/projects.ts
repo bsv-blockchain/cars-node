@@ -5,6 +5,8 @@ import type { Knex } from 'knex';
 import { Utils, Wallet } from '@bsv/sdk';
 import { execSync } from 'child_process';
 import dns from 'dns/promises';
+import { sendAdminNotificationEmail, sendWelcomeEmail, sendDomainChangeEmail } from '../utils/email';
+import { enableIngress } from '../utils/ingress';
 
 const router = Router();
 
@@ -147,8 +149,61 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
 });
 
 /**
+ * TODO: THIS IS NOT YET ACTUALLY IMPLEMENTED
+ * IT WILL USE THE NEW SERVICE MONETIZATION FRAMEWORK
+ * Pay (add funds) to a project
+ * @body { amount: number } - Amount in satoshis to add
+ */
+router.post('/:projectId/pay', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
+    const project = (req as any).project;
+    const { amount } = req.body;
+
+    if (typeof amount !== 'number' || amount <= 0) {
+        return res.status(400).json({ error: 'Invalid amount. Must be a positive number.' });
+    }
+
+    const oldBalance = Number(project.balance);
+    const newBalance = oldBalance + amount;
+    await db('projects').where({ id: project.id }).update({ balance: newBalance });
+
+    // Insert accounting record (credit)
+    const metadata = { reason: 'Admin payment' };
+    await db('project_accounting').insert({
+        project_id: project.id,
+        type: 'credit',
+        amount_sats: amount,
+        balance_after: newBalance,
+        metadata: JSON.stringify(metadata)
+    });
+
+    await db('logs').insert({
+        project_id: project.id,
+        message: `Balance increased by ${amount}. New balance: ${newBalance}`
+    });
+
+    // If balance was negative and now is >=0, re-enable ingress
+    if (oldBalance < 0 && newBalance >= 0) {
+        const enabled = await enableIngress(project.project_uuid);
+        if (enabled) { // TODO: This process could be handled better, when re-enabling after delinquency
+            await db('logs').insert({
+                project_id: project.id,
+                message: `Ingress re-enabled after payment. Balance: ${newBalance}`
+            });
+        } else {
+            await db('logs').insert({
+                project_id: project.id,
+                message: `Unable to re-enable ingress after payment, project needs to be redeployed.`
+            });
+        }
+    }
+
+    res.json({ message: `Paid ${amount} sats. New balance: ${newBalance}` });
+});
+
+/**
  * List projects where user is admin.
- * Returns project name, id, balance.
+ * Returns project name, id, balance, created_at.
  */
 router.post('/list', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
@@ -163,26 +218,72 @@ router.post('/list', requireRegisteredUser, async (req: Request, res: Response) 
 });
 
 /**
+ * Helper to resolve a user by identityKey or email
+ */
+async function resolveUser(db: Knex, identityOrEmail: string) {
+    let user = await db('users').where({ identity_key: identityOrEmail }).first();
+    if (!user && identityOrEmail.includes('@')) {
+        // Try email
+        user = await db('users').where({ email: identityOrEmail }).first();
+    }
+    return user;
+}
+
+/**
  * Add Admin to a project
- * @body { identityKey: string }
+ * @body { identityKeyOrEmail: string }
  */
 router.post('/:projectId/addAdmin', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
     const project = (req as any).project;
-    const { identityKey } = req.body;
+    const user = (req as any).user; // Originating user
+    const { identityKeyOrEmail } = req.body;
 
-    const user = await db('users').where({ identity_key: identityKey }).first();
-    if (!user) {
-        return res.status(400).json({ error: 'User not registered' });
+    const targetUser = await resolveUser(db, identityKeyOrEmail);
+    if (!targetUser) {
+        return res.status(400).json({ error: 'Target user not registered' });
     }
 
-    const existing = await db('project_admins').where({ project_id: project.id, identity_key: identityKey }).first();
+    const existing = await db('project_admins').where({ project_id: project.id, identity_key: targetUser.identity_key }).first();
     if (!existing) {
-        await db('project_admins').insert({ project_id: project.id, identity_key: identityKey });
+        await db('project_admins').insert({ project_id: project.id, identity_key: targetUser.identity_key });
         await db('logs').insert({
             project_id: project.id,
-            message: `Admin added: ${identityKey}`
+            message: `Admin added: ${targetUser.identity_key}`
         });
+
+        // Notify all admins
+        const admins = await db('project_admins')
+            .join('users', 'users.identity_key', 'project_admins.identity_key')
+            .where({ 'project_admins.project_id': project.id })
+            .select('users.email', 'users.identity_key');
+
+        const emails = admins.map((a: any) => a.email);
+        const subject = `Admin Added to Project: ${project.name}`;
+        const body = `Hello,
+
+User ${targetUser.identity_key} (${targetUser.email}) has been added as an admin to project "${project.name}" (ID: ${project.project_uuid}).
+
+Originated by: ${user.identity_key} (${user.email})
+
+Regards,
+CARS System`;
+
+        await sendAdminNotificationEmail(emails, project, body, subject);
+
+        // Send welcome email to the newly added admin
+        const welcomeSubject = `You have been added as an admin to: ${project.name}`;
+        const welcomeBody = `Hello,
+
+You have been added as an admin to project "${project.name}" (ID: ${project.project_uuid}).
+
+Originated by: ${user.identity_key} (${user.email})
+
+Regards,
+CARS System`;
+
+        await sendWelcomeEmail(targetUser.email, project, welcomeBody, welcomeSubject);
+
         return res.json({ message: 'Admin added' });
     } else {
         return res.json({ message: 'User is already an admin' });
@@ -191,51 +292,84 @@ router.post('/:projectId/addAdmin', requireRegisteredUser, requireProject, requi
 
 /**
  * Remove Admin from a project
- * @body { identityKey: string }
+ * @body { identityKeyOrEmail: string }
  */
 router.post('/:projectId/removeAdmin', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
     const project = (req as any).project;
-    const { identityKey } = req.body;
+    const user = (req as any).user; // Originator
+    const { identityKeyOrEmail } = req.body;
+
+    const targetUser = await resolveUser(db, identityKeyOrEmail);
+    if (!targetUser) {
+        return res.status(400).json({ error: 'Target user not registered' });
+    }
 
     const admins = await db('project_admins').where({ project_id: project.id });
-    if (admins.length === 1 && admins[0].identity_key === identityKey) {
+    if (admins.length === 1 && admins[0].identity_key === targetUser.identity_key) {
         return res.status(400).json({ error: 'Cannot remove last admin' });
     }
 
-    const existing = admins.find(a => a.identity_key === identityKey);
+    const existing = admins.find(a => a.identity_key === targetUser.identity_key);
     if (!existing) {
         return res.status(400).json({ error: 'User not an admin' });
     }
 
-    await db('project_admins').where({ project_id: project.id, identity_key: identityKey }).del();
+    await db('project_admins').where({ project_id: project.id, identity_key: targetUser.identity_key }).del();
     await db('logs').insert({
         project_id: project.id,
-        message: `Admin removed: ${identityKey}`
+        message: `Admin removed: ${targetUser.identity_key}`
     });
+
+
+    // Notify admins
+    const adminList = await db('project_admins')
+        .join('users', 'users.identity_key', 'project_admins.identity_key')
+        .where({ 'project_admins.project_id': project.id })
+        .select('users.email');
+
+    const emails = adminList.map((a: any) => a.email);
+    const subject = `Admin Removed from Project: ${project.name}`;
+    const body = `Hello,
+
+User ${targetUser.identity_key} (${targetUser.email}) has been removed as an admin from project "${project.name}" (ID: ${project.project_uuid}).
+
+Originated by: ${user.identity_key} (${user.email})
+
+Regards,
+CARS System`;
+
+    await sendAdminNotificationEmail(emails, project, body, subject);
+
     res.json({ message: 'Admin removed' });
 });
 
 /**
  * List admins for a project
+ * Returns admin identity_key, email, added_at
  */
 router.post('/:projectId/admins/list', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
     const project = (req as any).project;
 
-    const admins = await db('project_admins').where({ project_id: project.id }).select('identity_key');
-    res.json({ admins: admins.map(a => a.identity_key) });
+    const admins = await db('project_admins')
+        .join('users', 'users.identity_key', 'project_admins.identity_key')
+        .where({ project_id: project.id })
+        .select('project_admins.identity_key', 'users.email', 'project_admins.added_at');
+
+    res.json({ admins });
 });
 
 /**
  * List deployments for a project
+ * Returns deployment_uuid and creation time
  */
 router.post('/:projectId/deploys/list', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
     const project = (req as any).project;
 
-    const deploys = await db('deploys').where({ project_id: project.id }).select('deployment_uuid');
-    res.json({ deploys: deploys.map(d => d.deployment_uuid) });
+    const deploys = await db('deploys').where({ project_id: project.id }).select('deployment_uuid', 'created_at');
+    res.json({ deploys });
 });
 
 /**
@@ -313,8 +447,8 @@ router.post('/:projectId/webui/config', requireRegisteredUser, requireProject, r
 });
 
 /**
- * Get project info and current cluster status
- * - Checks namespace, pods, and ingress rules in Kubernetes.
+ * Get project info
+ * Returns billing info, SSL, custom domains, web UI config, etc.
  */
 router.post('/:projectId/info', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
     const project = (req as any).project;
@@ -332,9 +466,9 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
             const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
             const pods = JSON.parse(podsOutput.toString());
 
-            // Identify backend pod and extract deployment ID from its image tag
+            // Identify backend pod
             const backendPod = pods.items.find((pod: any) =>
-                pod.metadata.labels?.app === `${project.project_uuid}-backend`
+                pod.metadata.labels?.app === `cars-project-${project.project_uuid.substr(0, 24)}`
             );
             if (backendPod) {
                 const backendContainer = backendPod.spec.containers.find((c: any) => c.name === 'backend');
@@ -350,36 +484,149 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
                 pod.status.containerStatuses?.every((container: any) => container.ready)
             );
 
-            // Get ingress info
-            const ingressOutput = execSync(`kubectl get ingress -n ${namespace} -o json`);
-            const ingress = JSON.parse(ingressOutput.toString());
+            // Get ingress info (may fail if ingress is disabled)
+            try {
+                const ingressOutput = execSync(`kubectl get ingress -n ${namespace} -o json`);
+                const ingress = JSON.parse(ingressOutput.toString());
 
-            ingress.items.forEach((ing: any) => {
-                ing.spec.rules.forEach((rule: any) => {
-                    const host = rule.host;
-                    if (host.startsWith('frontend.')) {
-                        status.domains.frontend = host;
-                    } else if (host.startsWith('backend.')) {
-                        status.domains.backend = host;
-                    }
+                ingress.items.forEach((ing: any) => {
+                    if (!ing.spec.rules) return;
+                    ing.spec.rules.forEach((rule: any) => {
+                        const host = rule.host;
+                        if (host.startsWith('frontend.')) {
+                            status.domains.frontend = host;
+                        } else if (host.startsWith('backend.')) {
+                            status.domains.backend = host;
+                        }
+                    });
+                    status.domains.ssl = ing.spec.tls?.length > 0;
                 });
-                status.domains.ssl = ing.spec.tls?.length > 0;
-            });
+            } catch (ignore) {
+                // ingress might be disabled
+            }
 
         } catch (error: any) {
             logger.error({ error: error.message }, 'Error checking project status');
         }
 
+        const billingInfo = {
+            balance: Number(project.balance)
+        };
+
+        const customDomains = {
+            frontend: project.frontend_custom_domain || null,
+            backend: project.backend_custom_domain || null
+        };
+
+        const webUIConfig = project.web_ui_config ? JSON.parse(project.web_ui_config) : null;
+
         res.json({
             id: project.project_uuid,
             name: project.name,
             network: project.network,
-            status
+            status,
+            billing: billingInfo,
+            sslEnabled: status.domains.ssl,
+            customDomains,
+            webUIConfig
         });
     } catch (error: any) {
         logger.error({ error: error.message }, 'Error getting project info');
         res.status(500).json({ error: 'Failed to get project info' });
     }
+});
+
+/**
+ * Delete project endpoint
+ * Removes all resources and sends email to admins.
+ */
+router.post('/:projectId/delete', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
+    const project = (req as any).project;
+    const user = (req as any).user;
+
+    const namespace = `cars-project-${project.project_uuid}`;
+    const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}`;
+
+    // Uninstall helm release
+    try {
+        execSync(`helm uninstall ${helmReleaseName} -n ${namespace}`, { stdio: 'inherit' });
+    } catch (e) {
+        logger.warn({ project_uuid: project.project_uuid }, 'Helm uninstall failed or not found. Continuing.');
+    }
+
+    // Delete namespace
+    try {
+        execSync(`kubectl delete namespace ${namespace}`, { stdio: 'inherit' });
+    } catch (e) {
+        logger.warn({ project_uuid: project.project_uuid }, 'Namespace deletion failed or not found. Continuing.');
+    }
+
+    // Gather admins
+    const admins = await db('project_admins')
+        .join('users', 'users.identity_key', 'project_admins.identity_key')
+        .where({ 'project_admins.project_id': project.id })
+        .select('users.email', 'users.identity_key');
+
+    const emails = admins.map((a: any) => a.email);
+
+    // Send notification email
+    const subject = `Project Deleted: ${project.name}`;
+    const body = `Hello,
+
+Project "${project.name}" (ID: ${project.project_uuid}) has been deleted.
+
+Originated by: ${user.identity_key} (${user.email})
+
+All resources have been removed.
+
+Regards,
+CARS System`;
+
+    await sendAdminNotificationEmail(emails, project, body, subject);
+
+    // Delete from DB
+    await db('project_accounting').where({ project_id: project.id }).del();
+    await db('deploys').where({ project_id: project.id }).del();
+    await db('project_admins').where({ project_id: project.id }).del();
+    await db('logs').where({ project_id: project.id }).del();
+    await db('projects').where({ id: project.id }).del();
+
+    res.json({ message: 'Project deleted' });
+});
+
+/**
+ * Project billing stats endpoint.
+ * Query params (all optional):
+ *  - resource?: CPU|MEMORY|DISK|NETWORK|ALL
+ *  - type?: debit|credit
+ *  - start?: timestamp
+ *  - end?: timestamp
+ * Add as you like; here we just implement a flexible filter.
+ */
+router.post('/:projectId/billing/stats', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
+    const project = (req as any).project;
+
+    const { type, start, end } = req.body;
+
+    let query = db('project_accounting').where({ project_id: project.id });
+
+    if (type && ['debit', 'credit'].includes(type)) {
+        query = query.andWhere({ type });
+    }
+
+    if (start) {
+        query = query.andWhere('timestamp', '>=', new Date(start));
+    }
+
+    if (end) {
+        query = query.andWhere('timestamp', '<=', new Date(end));
+    }
+
+    const records = await query.orderBy('timestamp', 'desc').select('*');
+
+    res.json({ records });
 });
 
 /**
@@ -539,6 +786,7 @@ router.post('/:projectId/logs/resource/:resource', requireRegisteredUser, requir
  * - Queries DNS TXT records for `cars_project.<domain>`
  * - Expects a TXT record: cars-project-verification=<project_uuid>:<type>
  * - If not present, returns instructions. If present and correct, updates DB.
+ * - After successful verification, send notification email to admins.
  */
 async function handleCustomDomain(
     req: Request,
@@ -547,6 +795,7 @@ async function handleCustomDomain(
 ) {
     const { db }: { db: Knex } = req as any;
     const project = (req as any).project;
+    const user = (req as any).user;
 
     const { domain } = req.body;
     if (!domain || typeof domain !== 'string' || !domain.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
@@ -555,7 +804,6 @@ async function handleCustomDomain(
 
     // The expected TXT record
     const expectedRecord = `cars-project-verification=${project.project_uuid}:${domainType}`;
-
     const verificationHost = `cars_project.${domain}`;
 
     try {
@@ -580,6 +828,25 @@ async function handleCustomDomain(
             project_id: project.id,
             message: `${domainType.charAt(0).toUpperCase() + domainType.slice(1)} custom domain set: ${domain}`
         });
+
+        // Notify admins of domain change
+        const admins = await db('project_admins')
+            .join('users', 'users.identity_key', 'project_admins.identity_key')
+            .where({ 'project_admins.project_id': project.id })
+            .select('users.email');
+
+        const emails = admins.map((a: any) => a.email);
+        const subject = `Custom Domain Updated for Project: ${project.name}`;
+        const body = `Hello,
+
+The ${domainType} custom domain for project "${project.name}" (ID: ${project.project_uuid}) has been set to: ${domain}
+
+Originated by: ${user.identity_key} (${user.email})
+
+Regards,
+CARS System`;
+
+        await sendDomainChangeEmail(emails, project, body, subject);
 
         return res.json({ message: `${domainType.charAt(0).toUpperCase() + domainType.slice(1)} custom domain verified and set`, domain });
     } catch (err: any) {

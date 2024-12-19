@@ -16,6 +16,7 @@ import {
 } from '../utils';
 import crypto from 'crypto';
 import { findBalanceForKey, fundKey } from '../utils/wallet';
+import { sendDeploymentFailureEmail } from '../utils/email';
 
 const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
 
@@ -512,23 +513,54 @@ spec:
       await logStep(`Backend URL: ${valuesObj.ingressHostBackend}`);
     }
 
-    // Success response
-    res.json({
+    const responseObj: any = {
       message: 'Deployment completed successfully',
-      frontendUrl: frontendEnabled ? valuesObj.ingressHostFrontend : undefined,
-      backendUrl: backendEnabled ? valuesObj.ingressHostBackend : undefined
-    });
+    };
+    if (frontendEnabled) responseObj.frontendUrl = valuesObj.ingressHostFrontend;
+    if (backendEnabled) responseObj.backendUrl = valuesObj.ingressHostBackend;
+    if (frontendEnabled && project.frontend_custom_domain) responseObj.frontendCustomDomain = project.frontend_custom_domain;
+    if (backendEnabled && project.backend_custom_domain) responseObj.backendCustomDomain = project.backend_custom_domain;
+
+    res.json(responseObj);
   } catch (error: any) {
-    // On any error, log and respond
-    const errMsg = `Error handling upload: ${error.message}`;
     if (deploy && project) {
       await db('logs').insert({
         project_id: project.id,
         deploy_id: deploy.id,
-        message: errMsg
+        message: `Error handling upload: ${error.message}`
       });
+      logger.error(`Error handling upload: ${error.message}`, { deploymentId });
+
+      try {
+        // Send deployment failure email
+        const admins = await db('project_admins')
+          .join('users', 'users.identity_key', 'project_admins.identity_key')
+          .where({ 'project_admins.project_id': project.id })
+          .select('users.email', 'users.identity_key', 'users.email');
+        const emails = admins.map((a: any) => a.email);
+
+        const subject = `Deployment Failure for Project: ${project.name}`;
+        const body = `Hello,
+
+A deployment for project "${project.name}" (ID: ${project.project_uuid}) has failed.
+Deployment ID: ${deploy.deployment_uuid}
+
+Error Details:
+${error.message}
+
+Originated by: ${(req as any).user?.identity_key} (${(req as any).user?.email})
+
+Please check the logs for more details.
+
+Regards,
+CARS System`;
+
+        await sendDeploymentFailureEmail(emails, project, body, subject);
+      } catch (ignore) {
+
+      }
     }
-    logger.error(errMsg, { deploymentId });
-    res.status(500).json({ error: errMsg });
+
+    res.status(500).json({ error: `Error handling upload: ${error.message}` });
   }
 };

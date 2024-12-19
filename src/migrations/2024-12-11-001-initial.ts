@@ -27,6 +27,7 @@ export async function up(knex: Knex): Promise<void> {
     await knex.schema.createTable('project_admins', table => {
         table.integer('project_id').unsigned().notNullable().references('id').inTable('projects').onDelete('CASCADE');
         table.string('identity_key', 66).notNullable();
+        table.timestamp('added_at').defaultTo(knex.fn.now());
         table.primary(['project_id', 'identity_key']);
     });
 
@@ -48,9 +49,23 @@ export async function up(knex: Knex): Promise<void> {
         table.text('message').notNullable();
         table.timestamp('timestamp').defaultTo(knex.fn.now()).index();
     });
+
+    // Project accounting table - tracks credits and debits (billing)
+    await knex.schema.createTable('project_accounting', table => {
+        table.increments('id').primary();
+        table.integer('project_id').unsigned().notNullable().references('id').inTable('projects').onDelete('CASCADE');
+        table.integer('deploy_id').unsigned().references('id').inTable('deploys').onDelete('SET NULL');
+        table.timestamp('timestamp').defaultTo(knex.fn.now());
+        table.enum('type', ['credit', 'debit']).notNullable();
+        // We'll store rates and resource breakdown as JSON for flexibility
+        table.json('metadata').notNullable();
+        table.decimal('amount_sats', 20, 8).notNullable();
+        table.decimal('balance_after', 20, 8).notNullable();
+    });
 }
 
 export async function down(knex: Knex): Promise<void> {
+    await knex.schema.dropTableIfExists('project_accounting');
     await knex.schema.dropTableIfExists('logs');
     await knex.schema.dropTableIfExists('deploys');
     await knex.schema.dropTableIfExists('project_admins');

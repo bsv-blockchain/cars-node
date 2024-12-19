@@ -6,6 +6,7 @@ import bodyParser from 'body-parser';
 import { ProtoWallet, PrivateKey } from '@bsv/sdk';
 import routes from './routes';
 import upload from './routes/upload';
+import publicRoute from './routes/public';
 import { initCluster } from './init-cluster';
 import { startCronJobs } from './cron';
 
@@ -56,6 +57,9 @@ async function main() {
 
     // Upload uses signed URLs, so is excluded from Authrite. Also, they are not logged for performance reasons (they are large).
     app.post('/api/v1/upload/:deploymentId/:signature', upload);
+
+    // Public queries are also not authenticated
+    app.get('/api/v1/public', publicRoute)
 
     // Logging middleware
     app.use((req, res, next) => {
