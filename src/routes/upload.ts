@@ -75,6 +75,11 @@ export default async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
+    // Reject zero-balance and delinquent projects
+    if (project.balance < 1) {
+      return res.status(401).json({ error: `Project balance must be at least 1 satoshi to upload a deployment. Current balance: ${project.balance}` });
+    }
+
     // Store file locally
     const filePath = path.join('/tmp', `artifact_${deploymentId}.tgz`);
     fs.writeFileSync(filePath, req.body); // raw data
