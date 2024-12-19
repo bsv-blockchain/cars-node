@@ -1,7 +1,7 @@
 import sgMail from '@sendgrid/mail';
 
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL;
+const SYSTEM_FROM_EMAIL = process.env.SYSTEM_FROM_EMAIL;
 
 interface Project {
     project_uuid: string;
@@ -18,7 +18,7 @@ export async function sendEmailToAdmins(emails: string[], project: Project, newB
     if (!SENDGRID_API_KEY) {
         throw new Error('SENDGRID_API_KEY not set in environment variables');
     }
-    if (!FROM_EMAIL) {
+    if (!SYSTEM_FROM_EMAIL) {
         throw new Error('FROM_EMAIL is not set in environment variables')
     }
 
@@ -36,7 +36,7 @@ CARS System`;
 
     const msg = {
         to: emails, // can be multiple recipients
-        from: FROM_EMAIL,
+        from: SYSTEM_FROM_EMAIL,
         subject: subject,
         text: body
     };

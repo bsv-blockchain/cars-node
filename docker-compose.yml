@@ -25,23 +25,23 @@ services:
     extra_hosts:
       - "prometheus.localhost:host-gateway"
     environment:
-      PORT: 7777
+      CARS_NODE_PORT: ${CARS_NODE_PORT}
       MAINNET_PRIVATE_KEY: ${MAINNET_PRIVATE_KEY}
       TESTNET_PRIVATE_KEY: ${TESTNET_PRIVATE_KEY}
       TAAL_API_KEY_MAIN: ${TAAL_API_KEY_MAIN}
       TAAL_API_KEY_TEST: ${TAAL_API_KEY_TEST}
-      SERVER_BASEURL: "http://localhost:7777"
-      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
+      CARS_NODE_SERVER_BASEURL: ${CARS_NODE_SERVER_BASEURL}
+      MYSQL_DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
       LOG_LEVEL: "info"
       K3S_TOKEN: ${K3S_TOKEN}
-      KUBECONFIG: "/kubeconfig/kubeconfig.yaml"
-      DOCKER_HOST: "tcp://dind:2375"
-      DOCKER_REGISTRY: "cars-registry:5000"
-      PROJECT_DEPLOYMENT_DNS_NAME: "localhost" # Where will projects be deployed online?
+      KUBECONFIG: ${KUBECONFIG_FILE_PATH}
+      DOCKER_HOST: ${DOCKER_HOST}
+      DOCKER_REGISTRY: ${DOCKER_REGISTRY}
+      PROJECT_DEPLOYMENT_DNS_NAME: ${PROJECT_DEPLOYMENT_DNS_NAME} # Where will projects be deployed online?
       CERT_ISSUANCE_EMAIL: ${CERT_ISSUANCE_EMAIL}
       PROMETHEUS_URL: ${PROMETHEUS_URL}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
-      FROM_EMAIL: ${FROM_EMAIL}
+      SYSTEM_FROM_EMAIL: ${SYSTEM_FROM_EMAIL}
     depends_on:
       - mysql
     volumes:

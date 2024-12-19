@@ -2,7 +2,7 @@ import Knex from 'knex';
 
 const knexConfig = {
     client: 'mysql2',
-    connection: process.env.DATABASE_URL || {
+    connection: process.env.MYSQL_DATABASE_URL || {
         host: 'localhost',
         user: 'cars_user',
         password: 'cars_pass',

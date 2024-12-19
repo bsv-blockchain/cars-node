@@ -9,7 +9,7 @@ import upload from './routes/upload';
 import { initCluster } from './init-cluster';
 import { startCronJobs } from './cron';
 
-const port = parseInt(process.env.PORT || '7777', 10);
+const port = parseInt(process.env.CARS_NODE_PORT || '7777', 10);
 const MAINNET_PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY;
 const TESTNET_PRIVATE_KEY = process.env.TESTNET_PRIVATE_KEY;
 if (!MAINNET_PRIVATE_KEY || !TESTNET_PRIVATE_KEY) {
@@ -18,7 +18,7 @@ if (!MAINNET_PRIVATE_KEY || !TESTNET_PRIVATE_KEY) {
 if (!process.env.TAAL_API_KEY_MAIN || !process.env.TAAL_API_KEY_TEST) {
     throw new Error('TAAL API keys not configured');
 }
-const SERVER_BASEURL = process.env.SERVER_BASEURL || 'http://localhost:7777';
+const SERVER_BASEURL = process.env.CARS_NODE_SERVER_BASEURL || 'http://localhost:7777';
 const wallet = new ProtoWallet(new PrivateKey(MAINNET_PRIVATE_KEY, 16));
 
 async function main() {
