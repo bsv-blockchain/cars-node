@@ -216,6 +216,17 @@ EXPOSE 80`
       await logStep(`Backend image pushed: ${backendImage}`);
     }
 
+    // Safely handle and escape WEB_UI_CONFIG
+    let webUiConfigObj = {};
+    if (project.web_ui_config) {
+      try {
+        webUiConfigObj = JSON.parse(project.web_ui_config);
+      } catch {
+        // If invalid JSON, default to empty object
+        webUiConfigObj = {};
+      }
+    }
+
     // Prepare dynamic Helm chart
     const helmDir = path.join(uploadDir, 'helm');
     fs.ensureDirSync(helmDir);
@@ -301,7 +312,8 @@ spec:
         - name: MONGO_URL
           value: "mongodb://root:rootpassword@mongo:27017/admin"
         - name: WEB_UI_CONFIG
-          value: "${project.web_ui_config || ''}"
+          value: |-
+            ${JSON.stringify(webUiConfigObj)}
         ports:
         - containerPort: 8080
       {{- end }}
