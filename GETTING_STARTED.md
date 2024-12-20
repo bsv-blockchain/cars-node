@@ -39,7 +39,7 @@ This guide assumes basic familiarity with Linux server administration.
 You may select a provider such as DigitalOcean, AWS, GCP, or another of your choice.
 
 **Create a Droplet (VPS):**  
-- Use Ubuntu 22.04 x64.
+- Use Debian 12 x64.
 - Consider 4GB RAM, 2 vCPU as a minimum (adjust as needed).
 - Select a data center region close to you.
 - Ensure you have a public IPv4 address, for example, `203.0.113.10`.
@@ -70,7 +70,7 @@ apt update && apt upgrade -y
 We will use Nginx as a front-end traffic router and SSL terminator for the main CARS Node domain. We’ll also use Certbot to obtain and renew TLS certificates.
 
 ```bash
-apt install -y nginx certbot python3-certbot-nginx
+apt install -y nginx-full certbot python3-certbot-nginx
 ```
 
 ### Configure Firewall
@@ -113,7 +113,7 @@ We will configure Nginx as follows:
 
 **Edit Nginx Configuration:**
 
-Create a file for stream-based routing (e.g. `/etc/nginx/conf.d/stream.conf`):
+Edit your `/etc/nginx/nginx.conf` file. Above the `http {}` block, add a new `stream {}` block:
 
 ```nginx
 stream {
@@ -142,13 +142,16 @@ server {
 server {
     listen 80;
     server_name projects.example.com *.projects.example.com;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_pass http://127.0.0.1:6080;
+
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_pass http://127.0.0.1:6080;
+    }
 }
 ```
 
-Now create a configuration for `cars.example.com` HTTPS termination on a custom port (`4443`), which Nginx’s stream block will forward to:
+Now create another configuration (`/etc/nginx/conf.d/cars-node-ssl.conf`) for `cars.example.com` HTTPS termination on a custom port (`4443`), which Nginx’s stream block will forward to:
 
 ```nginx
 server {
@@ -171,9 +174,10 @@ server {
 }
 ```
 
-Enable the sites and test the configuration:
+Enable the new sites, disable the default site at this point, and test the configuration:
 ```bash
 ln -s /etc/nginx/sites-available/cars-and-projects.conf /etc/nginx/sites-enabled/
+rm /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 ```
@@ -183,51 +187,21 @@ At this point, Nginx will:
 - Pass through TLS for `*.projects.example.com` to the Kubernetes ingress.
 - Route all HTTP requests for `*.projects.example.com` to the ingress for ACME challenges and other HTTP-based needs.
 
-### Install MySQL
-
-For a small scale deployment, a single MySQL instance on the same server is sufficient:
-
-```bash
-apt install -y mysql-server
-systemctl start mysql
-systemctl enable mysql
-```
-
-Secure MySQL:
-```bash
-mysql_secure_installation
-```
-
-Create a database and user:
-```bash
-mysql -u root -p
-```
-Inside MySQL shell:
-```sql
-CREATE DATABASE cars_db;
-CREATE USER 'cars_user'@'localhost' IDENTIFIED BY 'cars_pass';
-GRANT ALL PRIVILEGES ON cars_db.* TO 'cars_user'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
 ### Install Docker and Docker Compose
 
 ```bash
-apt install -y ca-certificates curl gnupg lsb-release
+apt install -y ca-certificates curl gnupg
 
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-  gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-   https://download.docker.com/linux/ubuntu \
-   $(lsb_release -cs) stable" | \
-   tee /etc/apt/sources.list.d/docker.list > /dev/null
+"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/debian $(lsb_release -cs) stable" | \
+tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
 Test Docker:
@@ -235,45 +209,47 @@ Test Docker:
 docker run hello-world
 ```
 
-### Clone CARS Node Repo
+### Clone CARS Node Repo and Build Docker Images
 
 ```bash
 apt install -y git nodejs npm
 git clone https://github.com/bitcoin-sv/cars-node.git /opt/cars-node
 cd /opt/cars-node
 npm install
+docker compose build
 ```
+
+> NOTE: It's important to run `docker compose build` before you create your `.env` file. This is because your `.env` contains `DOCKER_HOST=tcp://dind:2375`, which will cause your image builds to fail. If you ever need to run `docker compose build` again (for example, during an upgrade to a new CARS Node version) you would need to temporarily move your `.env` somewhere else first (e.g. `mv .env .env.xxx && docker compose build && mv .env.xxx .env`).
 
 ---
 
 ## 3. Configure the CARS Node
 
-Use the CARS Node setup script to generate environment variables:
+From `/opt/cars-node`, use the CARS Node setup script to generate environment variables:
 
 ```bash
-cd /opt/cars-node
 npm run setup
 ```
 
 When prompted, provide the necessary details. Important environment values:
 
 - `CARS_NODE_PORT=7777`
-- `CARS_NODE_SERVER_BASEURL=https://cars.example.com`
+- `CARS_NODE_SERVER_BASEURL=https://cars.example.com` (your domain)
 - `MYSQL_DATABASE=cars_db`
 - `MYSQL_USER=cars_user`
-- `MYSQL_PASSWORD=cars_pass` (from above)
-- `MYSQL_ROOT_PASSWORD` (the one you set)
+- `MYSQL_PASSWORD=cars_pass` (generate one)
+- `MYSQL_ROOT_PASSWORD=rootpw` (generate one)
 - `MAINNET_PRIVATE_KEY` and `TESTNET_PRIVATE_KEY`: You’ll need to provide 64-char hex keys. Generate securely or use existing keys. Fund with at least 250,000 satoshis. [Use KeyFunder](https://keyfunder.babbage.systems). If testnet key funding isn't working (for now), just ignore and move on.
 - `TAAL_API_KEY_MAIN` and `TAAL_API_KEY_TEST`: Obtain from TAAL (explained in next step).
-- `K3S_TOKEN=cars-token` (random token)
+- `K3S_TOKEN=cars-token` (generate a random token)
 - `KUBECONFIG_FILE_PATH=/kubeconfig/kubeconfig.yaml` (will be created by cluster)
 - `DOCKER_HOST=tcp://dind:2375` (as per docker-compose)
 - `DOCKER_REGISTRY=cars-registry:5000`
-- `PROJECT_DEPLOYMENT_DNS_NAME=projects.example.com` (projects will be at `frontend.<id>.projects.example.com` and/or `backend.<id>.projects.example.com`)
-- `PROMETHEUS_URL=https://prometheus.projects.example.com`
+- `PROJECT_DEPLOYMENT_DNS_NAME=projects.example.com` (Your prrojects subdomain. Projects will be at `frontend.<id>.projects.example.com` and/or `backend.<id>.projects.example.com`.)
+- `PROMETHEUS_URL=https://prometheus.projects.example.com` (use `https://prometheus.<projects>`, your projects subdomain)
 - `SENDGRID_API_KEY` (obtain from SendGrid)
-- `SYSTEM_FROM_EMAIL=your@verified-domain.com`
-- `CERT_ISSUANCE_EMAIL=your@verified-domain.com`
+- `SYSTEM_FROM_EMAIL=your@verified-domain.com` (use your SendGrid-verified email)
+- `CERT_ISSUANCE_EMAIL=your@verified-domain.com` (use the email you used with `certbot` earlier, or another one where you have already agreed to the LetsEncrypt terms)
 
 ### Obtain TAAL API Keys
 
@@ -287,14 +263,14 @@ Paste them into `.env` or the setup script.
 
 Create a SendGrid account at [SendGrid.com](https://sendgrid.com/). Verify your domain (example.com) following SendGrid’s docs. Once verified:
 - Get your API Key from SendGrid.
-- Put it in `.env` under `SENDGRID_API_KEY`.
-- `SYSTEM_FROM_EMAIL` should be a verified email.
+- Put it in `.env` under `SENDGRID_API_KEY`, or provide interactively.
+- `SYSTEM_FROM_EMAIL` should be a SendGrid-verified email, ideally also from a domain you've authenticated using domain-level validation.
 
 ---
 
 ## 4. Running CARS Node via Docker Compose
 
-We’ll use the provided `docker-compose.yml`. Refer to the source code you've cloned.
+We’ll use the provided `docker-compose.yml`. Refer to the source code you've cloned. There are just a couple of edits:
 
 - Update the ingress HTTP port from its default value of 8081 to be 6080.
 - Update the ingress HTTPS port from its default value of 8082 to be 6443.
@@ -303,7 +279,6 @@ We’ll use the provided `docker-compose.yml`. Refer to the source code you've c
 
 Once satisfied, run:
 ```bash
-docker compose build
 docker compose up -d
 ```
 

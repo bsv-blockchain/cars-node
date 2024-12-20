@@ -408,7 +408,7 @@ router.post('/:projectId/deploy', requireRegisteredUser, async (req: Request, re
         counterparty: 'self'
     });
 
-    const uploadUrl = `${process.env.BASE_URL || 'http://localhost:7777'}/api/v1/upload/${deploymentId}/${Utils.toHex(signature)}`;
+    const uploadUrl = `${process.env.CARS_NODE_SERVER_BASEURL || 'http://localhost:7777'}/api/v1/upload/${deploymentId}/${Utils.toHex(signature)}`;
     res.json({
         url: uploadUrl,
         deploymentId,
