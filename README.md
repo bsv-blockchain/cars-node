@@ -2,7 +2,9 @@
 
 **CARS Node** is the backend runtime system for deploying and managing BSV Blockchain-based Overlay Services at scale in a cloud environment. It orchestrates Kubernetes clusters, billing, domain setup, SSL issuance, and application lifecycle management for your projects. Together with the **CARS CLI** and the **LARS** (Local Automated Runtime System) toolkit, CARS Node provides a seamless path from local development to production cloud deployment.
 
-If you’re familiar with the **CARS CLI**, which developers use to build and deploy artifacts from their machines, then think of the **CARS Node** as its cloud counterpart—a dynamic environment that receives your deployments, provisions infrastructure, handles scaling, billing, and secure access to your running BSV Overlay Services.
+If you’re familiar with the **[CARS CLI](https://github.com/bitcoin-sv/cars-cli)**, which developers use to build and deploy artifacts from their machines, then think of the **CARS Node** as its cloud counterpart—a dynamic environment that receives your deployments, provisions infrastructure, handles scaling, billing, and secure access to your running BSV Overlay Services.
+
+**Deploy Me!** After you check out this README, head on over to [GETTING_STARTED.md](./GETTING_STARTED.md) to follow along for a complete, zero-to-hero deployment exercise!
 
 ## Table of Contents
 
@@ -36,7 +38,7 @@ If you’re familiar with the **CARS CLI**, which developers use to build and de
 
 ## What is CARS Node?
 
-CARS Node is the “cloud runtime” counterpart to LARS (Local Automated Runtime System). While LARS helps you develop your Bitcoin SV Overlay Services locally, CARS Node runs them in a Kubernetes-based cloud environment. It’s responsible for:
+CARS Node is the “cloud runtime” counterpart to LARS (Local Automated Runtime System). While LARS helps you develop your BSV Overlay Services locally, CARS Node runs them in a Kubernetes-based cloud environment. It’s responsible for:
 
 - Receiving deployment artifacts built with the CARS CLI.
 - Provisioning Kubernetes resources (deployments, services, ingress) on-the-fly.
@@ -53,8 +55,8 @@ In short, CARS Node takes your `deployment-info.json` and packaged artifacts and
 - **Automated Kubernetes Provisioning:** CARS Node interacts with a Kubernetes cluster to schedule workloads, manage pods and services, and ensure high availability.
 - **Dynamic Ingress and SSL:** Uses `ingress-nginx`, `cert-manager`, and Let’s Encrypt to automatically provision custom domains and HTTPS certificates.
 - **Billing and Resource Usage Tracking:** Integrates with Prometheus to gather CPU, memory, disk, and network usage over time, billing projects automatically.
-- **Multiple Environment Support:** Supports mainnet and testnet keys, separate private keys, and network-specific TAAL API keys for blockchain operations.
-- **Identity and Project Management:** Integrates with `authrite` identity system, ensuring only authorized admins can create or manage projects.
+- **Multiple Environment Support:** Supports mainnet and testnet keys, separate private keys, and network-specific TAAL API keys for transaction broadcast, merkle proof acquisition, and double spend detection.
+- **Identity and Project Management:** Integrates with the standard BSV identity system, ensuring only authorized admins can create or manage projects.
 - **Logging and Observability:** Centralized logs in MySQL, plus direct access to cluster-level logs (frontend/backend/mongo/mysql) via `kubectl` and API endpoints.
 - **Extensible Setup:** Designed for both small-scale Docker Compose-based setups and large-scale, production-grade environments.
 
@@ -75,13 +77,13 @@ At a high level, CARS Node is an Express.js server that:
 
 ## Prerequisites
 
-- **BSV Project Structure:** Your deployed projects follow a known structure with `deployment-info.json`, a `backend/`, optional `frontend/`, and optional `contracts/`.
-- **CARS CLI Installed Locally (for developer workflows):** While not strictly required on the CARS Node host, you’ll use it on your dev machine to upload artifacts.
-- **Docker & Docker Registry:** Needed for building/pushing images.  
-- **Kubernetes Cluster and kubectl Access:** CARS Node expects access to a k3s or Kubernetes cluster.  
-- **Helm:** For deploying workloads as Helm releases.  
-- **MySQL Database:** Persistent storage of project state.
-- **SendGrid API Key (Optional):** For sending email notifications about billing, deployments, and admin changes.
+- **BSV Project Structure:** Your deployed projects follow [a known structure (BRC-102)](https://github.com/bitcoin-sv/BRCs/blob/master/apps/0102.md) with `deployment-info.json`, a `backend/`, `frontend/`, and integrated sCrypt contracts (optional).
+- **[CARS CLI](https://github.com/bitcoin-sv/cars-cli) Installed Locally (for developer workflows):** Use it on your dev machine to upload built artifacts.
+- **Docker & Docker Registry:** Needed for building/pushing images. Use the integrated `registry` and `dind` in the local `docker-compose.yml`, or configure externally.
+- **Kubernetes Cluster and kubectl Access:** CARS Node expects access to a k3s or Kubernetes cluster. Again, you can use the pre-configured Rancher k3s in the Compose file, or configure your own for larger scale. The Dockerfile bundled with the code installs `kubectl`, or you can run CARS directly on machine(s) that already have it.
+- **Helm:** For deploying workloads as Helm releases. Again, present in the integrated `Dockerfile`, or you can install it yourself.
+- **MySQL Database:** Persistent storage of project state. Use the integrated Compose file, or configure your own with ENV variables.
+- **SendGrid API Key:** For sending email notifications about billing, deployments, and admin changes. Provide it as an environmental variable or add it to a local `.env` for use with Compose.
 
 ---
 
@@ -133,7 +135,7 @@ For larger scale or production:
 
 ### Projects and Deployments
 
-- **Projects:** Each BSV Overlay Service managed by CARS Node is a “project.” A project has admins, a unique UUID, a private key, and a balance.
+- **Projects:** Each BSV Overlay Services deployment managed by CARS Node is a “project.” A project has admins, a unique UUID, a private key, and a balance.
 - **Deployments (Releases):** Each time you run `cars release now` or create a release manually, you upload an artifact (tarball) to CARS Node. It extracts the artifact, builds Docker images (backend and/or frontend), and then deploys them to Kubernetes using Helm.
 
 ### Billing and Resource Tracking
@@ -147,8 +149,8 @@ CARS Node uses Kubernetes ingress with `ingress-nginx` and `cert-manager`:
 - Each project gets subdomains of `PROJECT_DEPLOYMENT_DNS_NAME` by default:  
   `frontend.<project-id>.<project-deployment-dns>`,  
   `backend.<project-id>.<project-deployment-dns>`.
-- You can also set custom domains by adding TXT verification records. Once verified, CARS Node updates ingress and triggers SSL certificate issuance.
-- Let’s Encrypt certificates are managed automatically.
+- You can also set custom domains by adding TXT verification records. Once verified, CARS Node updates ingress and triggers SSL certificate issuance. Be sure to point any custom domains to the cluster's ingress IP for reachability.
+- Let’s Encrypt SSL certificates are managed automatically.
 
 ### Logs and Debugging
 
@@ -177,6 +179,8 @@ The CLI talks to CARS Node’s APIs. Everything you can do interactively (`cars`
 ---
 
 ## Admin and Developer Guides
+
+**[Deploy your CARS node now!](./GETTING_STARTED.md)**
 
 ### Admin Tasks (Projects, Admins, Billing)
 
@@ -215,7 +219,7 @@ Integrate `cars build` and `cars release now` into CI pipelines. After pushing c
 ## Tips and Best Practices
 
 - **Start Small, Scale Later:** Begin with a local `docker-compose up` environment, then move to production clusters as you grow.
-- **Regular Billing Checks:** Watch your project balances. Negative balances may lead to restricted ingress (in production scenarios).
+- **Regular Billing Checks:** Watch your project balances. Negative balances may lead to restricted ingress (in production scenarios). Emails are sent to project admins when balances get low.
 - **Use Multiple CARS Configs:** In `deployment-info.json`, define multiple CARS configs for staging, production, or different cloud providers.
 - **Continuous Deployment:** Combine `cars build` and `cars release now` in CI/CD to achieve fully automated deployment pipelines.
 
