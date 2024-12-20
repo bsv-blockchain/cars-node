@@ -269,7 +269,7 @@ When prompted, provide the necessary details. Important environment values:
 - `KUBECONFIG_FILE_PATH=/kubeconfig/kubeconfig.yaml` (will be created by cluster)
 - `DOCKER_HOST=tcp://dind:2375` (as per docker-compose)
 - `DOCKER_REGISTRY=cars-registry:5000`
-- `PROJECT_DEPLOYMENT_DNS_NAME=projects.example.com` (projects will be at frontend.<id>.projects.example.com)
+- `PROJECT_DEPLOYMENT_DNS_NAME=projects.example.com` (projects will be at `frontend.<id>.projects.example.com` and/or `backend.<id>.projects.example.com`)
 - `PROMETHEUS_URL=https://prometheus.projects.example.com`
 - `SENDGRID_API_KEY` (obtain from SendGrid)
 - `SYSTEM_FROM_EMAIL=your@verified-domain.com`
@@ -285,7 +285,7 @@ Paste them into `.env` or the setup script.
 
 ### Setup SendGrid
 
-Create a SendGrid account at [https://sendgrid.com/]. Verify your domain (example.com) following SendGrid’s docs. Once verified:
+Create a SendGrid account at [SendGrid.com](https://sendgrid.com/). Verify your domain (example.com) following SendGrid’s docs. Once verified:
 - Get your API Key from SendGrid.
 - Put it in `.env` under `SENDGRID_API_KEY`.
 - `SYSTEM_FROM_EMAIL` should be a verified email.
@@ -396,8 +396,11 @@ On success, you should have:
 - `frontend.<projectid>.projects.example.com`
 - `backend.<projectid>.projects.example.com`
 
-They should show your application or endpoints.  
-If using custom domains, set TXT records and run domain verification from CLI as described in the [CARS CLI README](https://github.com/bitcoin-sv/cars-cli). Set the custom domain's A record to cluster ingress IP.
+The backend should show the [Overlay Express](https://github.com/bitcoin-sv/overlay-express) web UI's homepage, and the frontend should show the user interface for your BSV project.
+
+If using custom domains, set TXT records and run domain verification from your dev machine as described in the [CARS CLI README](https://github.com/bitcoin-sv/cars-cli).
+
+Set the custom domain's A record to your CARS Node's IP address, or create a CNAME record that points at `frontend.<projectID>.example.com` or `backend.<projectID>.example.com` as appropriate.
 
 ### Additional Debugging
 
