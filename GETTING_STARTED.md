@@ -6,60 +6,57 @@ This is a rough guide for how to get up and running with a CARS node from scratc
 
 We will:
 
-1. **Provision a Linux VPS** (e.g., on DigitalOcean) with two public IP addresses:
-   - **IP #1**: For the CARS Node’s API (e.g., `203.0.113.10`)
-   - **IP #2**: For the Kubernetes cluster ingress (e.g., `203.0.113.11`)
-
+1. **Provision a Linux VPS** (e.g., on DigitalOcean) with one public IP address (e.g., `203.0.113.10`).
+   
 2. **Set Up System Dependencies**:
-   - Install Nginx, Certbot for HTTPS termination to the CARS Node.
-   - Install MySQL and create a database and user for CARS Node.
+   - Install Nginx and Certbot for HTTPS termination.
+   - Install MySQL and create a database and user for the CARS Node.
    - Install Docker and Docker Compose.
-   - Create a `.env` file and run `npm run setup` for CARS Node configuration.
+   - Run the CARS Node setup script and configure environment variables.
 
 3. **Configure DNS**:
-   - Purchase a domain, point `cars.example.com` to the Node IP and the wildcard `*.example.com` to the cluster ingress IP.
-   
+   - Purchase a domain, point `cars.example.com` and the wildcard `*.projects.example.com` to the IP address (we'll suppose `203.0.113.10`).
+
 4. **Set Up SendGrid and TAAL**:
    - Sign up for SendGrid, verify domain, obtain API key for emails.
    - Sign up for TAAL, get testnet and mainnet API keys.
 
-5. **Run and Manage CARS Node**:
-   - Start CARS Node with `docker-compose`.
-   - Configure systemd service to run on startup.
+5. **Run and Manage the CARS Node**:
+   - Start the CARS Node services with Docker Compose.
+   - Configure a systemd service for startup.
    - Test by creating a project and a release.
-   - Debug and monitor system logs and metrics.
+   - Debug and monitor logs and metrics.
 
 6. **Verification and Customization**.
 
-This guide assumes a basic familiarity with Linux server administration.
+This guide assumes basic familiarity with Linux server administration.
 
 ---
 
 ## 1. Provisioning the VPS and Setting Up Networking
 
 **Choose a Cloud Provider:**  
-For this guide, let’s pick DigitalOcean, but AWS, GCP, or another provider will work similarly.
+You may select a provider such as DigitalOcean, AWS, GCP, or another of your choice.
 
 **Create a Droplet (VPS):**  
-- Sign in to [DigitalOcean](https://www.digitalocean.com/).
-- Create a new Droplet:
-  - Ubuntu 22.04 x64.
-  - 4GB RAM, 2 vCPU (minimum; you can scale up as needed).
-  - Choose a data center region close to you.
+- Use Ubuntu 22.04 x64.
+- Consider 4GB RAM, 2 vCPU as a minimum (adjust as needed).
+- Select a data center region close to you.
+- Ensure you have a public IPv4 address, for example, `203.0.113.10`.
 
-**Add Floating IPs or Additional IPs:**  
-We need two public IP addresses. Assign one IP to the primary interface and request an additional IP (Floating IP or secondary IP) from your provider.  
-- IP #1 (Primary): `203.0.113.10` (for CARS Node directly via Nginx)
-- IP #2 (Secondary): `203.0.113.11` (for Kubernetes ingress; this will be used by projects)
-
-Make sure these IPs are assigned to your droplet and are reachable by ping.
+**Assign DNS Records:**
+- Configure the domain’s DNS records such that:
+  - `cars.example.com` → `203.0.113.10`
+  - `*.projects.example.com` → `203.0.113.10`
+  
+After setting these DNS records, wait for propagation. You should be able to `ping cars.example.com` from your local machine once DNS is ready.
 
 **SSH into the Server:**
 ```bash
 ssh root@203.0.113.10
 ```
 
-Update system:
+Update the system:
 ```bash
 apt update && apt upgrade -y
 ```
@@ -70,7 +67,7 @@ apt update && apt upgrade -y
 
 ### Install Nginx and Certbot
 
-We will set up Nginx as a reverse proxy in front of the CARS Node, and Certbot for Let’s Encrypt TLS certificates.
+We will use Nginx as a front-end traffic router and SSL terminator for the main CARS Node domain. We’ll also use Certbot to obtain and renew TLS certificates.
 
 ```bash
 apt install -y nginx certbot python3-certbot-nginx
@@ -78,7 +75,7 @@ apt install -y nginx certbot python3-certbot-nginx
 
 ### Configure Firewall
 
-If using ufw:
+If you use `ufw`:
 ```bash
 ufw allow OpenSSH
 ufw allow 80
@@ -86,38 +83,55 @@ ufw allow 443
 ufw enable
 ```
 
-### Domain Setup
+### Domain and Certificate Setup
 
-Buy a domain from your preferred registrar (e.g. Namecheap, GoDaddy). Let’s assume `example.com`.
+Buy a domain if you haven’t already, for example `example.com`. For this guide, we assume:
+- Primary domain for CARS Node: `cars.example.com`
+- Projects deployment domain: `*.projects.example.com`
 
-- Set `cars.example.com` A-record to `203.0.113.10` (Node IP).
-- Set `*.projects.example.com` A-record to `203.0.113.11` (Cluster Ingress IP).
-
-We will later use `PROJECT_DEPLOYMENT_DNS_NAME=projects.example.com` and rely on `frontend.<projectid>.projects.example.com` and `backend.<projectid>.projects.example.com` subdomains pointing to `203.0.113.11`.
-
-### Obtain TLS Certificate for CARS Node
-
-Wait until DNS has propagated (you can `ping cars.example.com` from your local machine to confirm).
-
-Then:
+Obtain an HTTPS certificate for `cars.example.com`:
 ```bash
 certbot --nginx -d cars.example.com
 ```
-Follow prompts to get Let’s Encrypt certificate.
+Follow the prompts to get a Let’s Encrypt certificate. After completion, Nginx will have a configuration snippet for TLS at `cars.example.com`. You can verify by navigating to `https://cars.example.com` in a browser (though it may show a default page or a 502 error until the CARS Node is running).
 
-This sets up an SSL configuration in Nginx.
+### Nginx Reverse Proxy and Routing Setup
 
-Verify your SSL is enabled on `https://cars.example.com`.
+You have one IP for all traffic. You must route requests so that:
 
-### Nginx Reverse Proxy Setup
+- Requests to `cars.example.com` are SSL-terminated by Nginx and then proxied to the CARS Node, which will run on an internal port (e.g. `localhost:7777`).
+- Requests to `*.projects.example.com` must be forwarded to the Kubernetes ingress inside the CARS Node environment. The Kubernetes ingress will handle its own TLS certificates for project subdomains. Thus, for HTTPS traffic destined for `*.projects.example.com`, Nginx must use TLS passthrough based on SNI, forwarding the raw encrypted data directly to the ingress. For HTTP traffic to `*.projects.example.com`, Nginx should proxy it to the ingress’s HTTP port so that Let’s Encrypt challenges and other HTTP functions work for the project domains.
 
-Create an Nginx config for CARS Node (which will run on port 7777 internally):
+We will configure Nginx as follows:
 
-```bash
-nano /etc/nginx/sites-available/cars-node.conf
+- Use Nginx’s `stream` module for port 443 (HTTPS) to route based on SNI:
+  - If SNI is `cars.example.com`, route to a local HTTPS termination endpoint at `127.0.0.1:4443`.
+  - Otherwise (any other domain, including `*.projects.example.com`), pass through TLS traffic to the Kubernetes ingress at `127.0.0.1:6443`.
+- Use Nginx’s `http` configuration for port 80 (HTTP):
+  - If `Host` is `cars.example.com`, redirect to HTTPS.
+  - If `Host` matches `projects.example.com` or any `*.projects.example.com`, proxy requests to `127.0.0.1:6080` (where the Kubernetes ingress listens for HTTP).
+
+**Edit Nginx Configuration:**
+
+Create a file for stream-based routing (e.g. `/etc/nginx/conf.d/stream.conf`):
+
+```nginx
+stream {
+    map $ssl_preread_server_name $upstream {
+        cars.example.com    127.0.0.1:4443;
+        default             127.0.0.1:6443; # Kubernetes ingress TLS endpoint
+    }
+
+    server {
+        listen 443;
+        ssl_preread on;
+        proxy_pass $upstream;
+    }
+}
 ```
 
-Add:
+Create a configuration for HTTP routing (e.g. `/etc/nginx/sites-available/cars-and-projects.conf`):
+
 ```nginx
 server {
     listen 80;
@@ -126,7 +140,19 @@ server {
 }
 
 server {
-    listen 443 ssl;
+    listen 80;
+    server_name projects.example.com *.projects.example.com;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_pass http://127.0.0.1:6080;
+}
+```
+
+Now create a configuration for `cars.example.com` HTTPS termination on a custom port (`4443`), which Nginx’s stream block will forward to:
+
+```nginx
+server {
+    listen 4443 ssl;
     server_name cars.example.com;
 
     ssl_certificate /etc/letsencrypt/live/cars.example.com/fullchain.pem;
@@ -135,7 +161,7 @@ server {
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     location / {
-        proxy_pass http://localhost:7777;
+        proxy_pass http://127.0.0.1:7777;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -145,14 +171,17 @@ server {
 }
 ```
 
-Enable the config:
+Enable the sites and test the configuration:
 ```bash
-ln -s /etc/nginx/sites-available/cars-node.conf /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/cars-and-projects.conf /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
 ```
 
-After the configuration changes, verify once more to ensure that your SSL is still enabled on `https://cars.example.com`. HTTPS should still work even if there is a 502 error until after CARS node is running on `localhost:7777`.
+At this point, Nginx will:
+- Terminate TLS for `cars.example.com` and forward to the CARS Node (once it’s running).
+- Pass through TLS for `*.projects.example.com` to the Kubernetes ingress.
+- Route all HTTP requests for `*.projects.example.com` to the ingress for ACME challenges and other HTTP-based needs.
 
 ### Install MySQL
 
@@ -169,7 +198,7 @@ Secure MySQL:
 mysql_secure_installation
 ```
 
-Create DB and user:
+Create a database and user:
 ```bash
 mysql -u root -p
 ```
@@ -190,12 +219,12 @@ apt install -y ca-certificates curl gnupg lsb-release
 mkdir -p /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
   gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
 echo \
-  "deb [arch=$(dpkg --print-architecture) \
-   signed-by=/etc/apt/keyrings/docker.gpg] \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
    https://download.docker.com/linux/ubuntu \
    $(lsb_release -cs) stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
+   tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 apt update
 apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
@@ -217,16 +246,17 @@ npm install
 
 ---
 
-## 3. Configure CARS Node
+## 3. Configure the CARS Node
 
-Set environment variables in `.env`. We will run the setup script which interactively generates `.env`:
+Use the CARS Node setup script to generate environment variables:
 
 ```bash
 cd /opt/cars-node
 npm run setup
 ```
 
-**Key Values to Provide:**
+When prompted, provide the necessary details. Important environment values:
+
 - `CARS_NODE_PORT=7777`
 - `CARS_NODE_SERVER_BASEURL=https://cars.example.com`
 - `MYSQL_DATABASE=cars_db`
@@ -266,12 +296,12 @@ Create a SendGrid account at [https://sendgrid.com/]. Verify your domain (exampl
 
 We’ll use the provided `docker-compose.yml`. Refer to the source code you've cloned.
 
-- Update the ingress HTTP port from its default value of 8081 to be 80.
-- Update the ingress HTTPS port from its default value of 8082 to be 443.
+- Update the ingress HTTP port from its default value of 8081 to be 6080.
+- Update the ingress HTTPS port from its default value of 8082 to be 6443.
 - Review the variables and ensure that everything else is consistent with your setup and expectations. 
 - Adjust as needed. Make sure the `.env` file generated by the `npm run setup` script is located in the same directory as your Docker Compose file and your source code.
 
-Run your new CARS node:
+Once satisfied, run:
 ```bash
 docker compose build
 docker compose up -d
@@ -282,7 +312,7 @@ Check logs:
 docker compose logs -f cars-node
 ```
 
-Once stable, CARS Node should be accessible at `https://cars.example.com`.
+Wait for the node to become stable. Access `https://cars.example.com/api/v1/public` in your browser. You should see a CARS Node endpoint responding. If successful, your main domain is now served over HTTPS via Nginx, and the node is fully operational.
 
 ### Auto-Start on Server Boot
 
@@ -403,8 +433,12 @@ If SSL certificates for projects are required, CARS Node will annotate ingresses
 
 ## 9. Maintenance and Upgrades
 
-- Pull new code and `npm install` for updates.
-- `docker compose build` then `docker compose up -d` to apply updates.
+To update the CARS Node:
+- Pull new changes: `git pull`
+- Reinstall dependencies if needed: `npm install`
+- Rebuild and redeploy: `docker compose build && docker compose up -d`
+
+Monitor logs and ensure everything restarts cleanly.
 
 ---
 
