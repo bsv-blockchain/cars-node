@@ -351,8 +351,8 @@ From your local machine, install CARS CLI (`npm i -g @bsv/cars-cli`) and point a
 
 - If something fails, check `docker compose logs cars-node`.
 - Check MySQL logs if database issues occur: `docker compose logs mysql`.
-- Ensure DNS is correct and `cars.example.com` points to the node IP.
-- Ensure the wildcard `*.projects.example.com` points to the second IP, the one used for Kubernetes cluster ingest.
+- Ensure DNS is correct and `cars.example.com` points to the server IP.
+- Ensure the wildcard `*.projects.example.com` also points to the same server IP, or the one used for Kubernetes cluster ingest.
 
 ---
 
@@ -411,7 +411,7 @@ If SSL certificates for projects are required, CARS Node will annotate ingresses
 ## 8. Customization and Monitoring
 
 - **Pricing:** Edit environment variables in `.env` for CPU, MEM, DISK, NET rates and `docker compose up -d`.
-- **Prometheus/Grafana:** You can integrate external Prometheus/Grafana to monitor resource usage and get deeper insights.
+- **Prometheus/Grafana:** You can integrate external Prometheus/Grafana to monitor resource usage and get deeper insights. Your Prometheus endpoint is publicly available at `https://prometheus.projects.example.com`. Strongly consider setting up authentication.
 - **Scaling Up:** For more load, increase VPS size or run MySQL and registry externally. Point `KUBECONFIG_FILE_PATH` to a remote Kubernetes cluster. Modify Helm charts for replication and horizontal pod autoscalers.
 
 ---
@@ -421,7 +421,7 @@ If SSL certificates for projects are required, CARS Node will annotate ingresses
 To update the CARS Node:
 - Pull new changes: `git pull`
 - Reinstall dependencies if needed: `npm install`
-- Rebuild and redeploy: `docker compose build && docker compose up -d`
+- Rebuild and redeploy: `mv .env .env.xxx && docker compose build && mv .env.xxx .env && docker compose up -d`
 
 Monitor logs and ensure everything restarts cleanly.
 
