@@ -134,6 +134,12 @@ export default async (req: Request, res: Response) => {
     const backendEnabled = deployTargets.includes('backend');
     const frontendEnabled = deployTargets.includes('frontend');
 
+    if (!frontendEnabled && !backendEnabled) {
+      const errMsg = `This deployment does not include a frontend or a backend. It must have at least one, even if it doesn't have both.`;
+      await logStep(errMsg, 'error');
+      return res.status(400).json({ error: errMsg });
+    }
+
     const registryHost = 'cars-registry:5000';
     let backendImage: string | null = null;
     let frontendImage: string | null = null;
@@ -352,12 +358,30 @@ spec:
     );
 
     // ingress.yaml
+    let tlsHosts = ''
+    if (frontendEnabled) {
+      tlsHosts += `      - ${valuesObj.ingressHostFrontend}\n`
+      if (valuesObj.ingressCustomFrontend) {
+        tlsHosts += `      - ${valuesObj.ingressCustomFrontend}\n`
+      }
+    }
+    if (backendEnabled) {
+      tlsHosts += `      - ${valuesObj.ingressHostBackend}\n`
+      if (valuesObj.ingressCustomBackend) {
+        tlsHosts += `      - ${valuesObj.ingressCustomBackend}\n`
+      }
+    }
     let ingressYaml = `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "cars-project.fullname" . }}-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-production"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+${tlsHosts}      secretName: project-${project.project_uuid}-tls
   rules:
 `
     if (frontendEnabled) {
