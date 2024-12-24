@@ -9,6 +9,7 @@ import upload from './routes/upload';
 import publicRoute from './routes/public';
 import { initCluster } from './init-cluster';
 import { startCronJobs } from './cron';
+import timeout from 'connect-timeout';
 
 const port = parseInt(process.env.CARS_NODE_PORT || '7777', 10);
 const MAINNET_PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY;
@@ -21,6 +22,10 @@ if (!process.env.TAAL_API_KEY_MAIN || !process.env.TAAL_API_KEY_TEST) {
 }
 const SERVER_BASEURL = process.env.CARS_NODE_SERVER_BASEURL || 'http://localhost:7777';
 const wallet = new ProtoWallet(new PrivateKey(MAINNET_PRIVATE_KEY, 16));
+
+function haltOnTimedout (req, res, next) {
+  if (!req.timedout) next()
+}
 
 async function main() {
     // Run migrations
@@ -56,7 +61,7 @@ async function main() {
     });
 
     // Upload uses signed URLs, so is excluded from Authrite. Also, they are not logged for performance reasons (they are large).
-    app.post('/api/v1/upload/:deploymentId/:signature', upload);
+    app.post('/api/v1/upload/:deploymentId/:signature', timeout('2h'), haltOnTimedout, upload);
 
     // Public queries are also not authenticated
     app.get('/api/v1/public', publicRoute)
