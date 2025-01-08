@@ -309,6 +309,8 @@ spec:
           value: "${valuesObj.ingressHostBackend}"
         - name: REQUEST_LOGGING
           value: "true"
+        - name: GASP_SYNC
+          value: "true"
         - name: NETWORK
           value: "${carsConfig.network}"
         - name: ARC_API_KEY
