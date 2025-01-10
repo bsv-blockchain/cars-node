@@ -21,7 +21,7 @@ export async function up(knex: Knex): Promise<void> {
         table.timestamp('created_at').defaultTo(knex.fn.now());
         table.string('frontend_custom_domain');
         table.string('backend_custom_domain');
-        table.json('engine_config').defaultTo(JSON.stringify({}));
+        table.string('engine_config');
         table.string('admin_bearer_token', 64);
     });
 
