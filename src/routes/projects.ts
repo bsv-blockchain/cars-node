@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import dns from 'dns/promises';
 import { sendAdminNotificationEmail, sendWelcomeEmail, sendDomainChangeEmail } from '../utils/email';
 import { enableIngress } from '../utils/ingress';
+import axios from 'axios';
 
 const router = Router();
 
@@ -126,12 +127,25 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
         }
     }
 
+    // Generate a random admin bearer token for OverlayExpress
+    const adminBearerToken = crypto.randomBytes(32).toString('hex');
+
+    // Provide some default advanced config
+    const defaultEngineConfig = {
+        syncConfiguration: {},
+        logTime: false,
+        logPrefix: '[CARS OVERLAY ENGINE] ',
+        throwOnBroadcastFailure: false
+    };
+
     const [projId] = await db('projects').insert({
         project_uuid: projectId,
         name: name || 'Unnamed Project',
         balance: 0,
         network: network === 'testnet' ? 'testnet' : 'mainnet',
-        private_key: privateKey
+        private_key: privateKey,
+        engine_config: JSON.stringify(defaultEngineConfig),
+        admin_bearer_token: adminBearerToken
     }, ['id']).returning('id');
 
     await db('project_admins').insert({
@@ -223,7 +237,6 @@ router.post('/list', requireRegisteredUser, async (req: Request, res: Response) 
 async function resolveUser(db: Knex, identityOrEmail: string) {
     let user = await db('users').where({ identity_key: identityOrEmail }).first();
     if (!user && identityOrEmail.includes('@')) {
-        // Try email
         user = await db('users').where({ email: identityOrEmail }).first();
     }
     return user;
@@ -873,6 +886,165 @@ router.post('/:projectId/domains/frontend', requireRegisteredUser, requireProjec
  */
 router.post('/:projectId/domains/backend', requireRegisteredUser, requireProject, requireProjectAdmin, (req: Request, res: Response) => {
     return handleCustomDomain(req, res, 'backend');
+});
+
+/**
+ * ==============================
+ * ADVANCED ENGINE CONFIG
+ * ==============================
+ */
+
+/**
+ * Update advanced engine settings for this project.
+ * This includes toggling GASP, request logging, sync config, etc.
+ * Body can include partial updates:
+ * {
+ *   requestLogging?: boolean,
+ *   gaspSync?: boolean,
+ *   syncConfiguration?: Record<string, false | string[] | 'SHIP'>,
+ *   logTime?: boolean,
+ *   logPrefix?: string,
+ *   throwOnBroadcastFailure?: boolean
+ * }
+ */
+router.post('/:projectId/settings/update', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const { db }: { db: Knex } = req as any;
+    const project = (req as any).project;
+
+    let {
+        requestLogging,
+        gaspSync,
+        syncConfiguration,
+        logTime,
+        logPrefix,
+        throwOnBroadcastFailure
+    } = req.body;
+
+    // Load existing engine_config
+    let engineConfig: any;
+    try {
+        engineConfig = project.engine_config ? JSON.parse(project.engine_config) : {};
+    } catch (e) {
+        engineConfig = {};
+    }
+
+    // Merge updates
+    if (typeof requestLogging === 'boolean') {
+        engineConfig.requestLogging = requestLogging;
+    }
+    if (typeof gaspSync === 'boolean') {
+        engineConfig.gaspSync = gaspSync;
+    }
+    if (syncConfiguration && typeof syncConfiguration === 'object') {
+        engineConfig.syncConfiguration = syncConfiguration;
+    }
+    if (typeof logTime === 'boolean') {
+        engineConfig.logTime = logTime;
+    }
+    if (typeof logPrefix === 'string') {
+        engineConfig.logPrefix = logPrefix;
+    }
+    if (typeof throwOnBroadcastFailure === 'boolean') {
+        engineConfig.throwOnBroadcastFailure = throwOnBroadcastFailure;
+    }
+
+    // Save back to DB
+    await db('projects').where({ id: project.id }).update({
+        engine_config: JSON.stringify(engineConfig)
+    });
+
+    await db('logs').insert({
+        project_id: project.id,
+        message: 'Engine settings updated'
+    });
+
+    return res.json({ message: 'Engine settings updated successfully', engineConfig });
+});
+
+/**
+ * ==============================
+ * PROXY ADMIN ENDPOINTS
+ * ==============================
+ * Admins can request we call /admin/syncAdvertisements or /admin/startGASPSync
+ * on their deployed OverlayExpress instance. We'll find the right domain,
+ * attach the stored admin_bearer_token, and proxy the request.
+ */
+
+/**
+ * Helper for constructing the backend domain for the project
+ */
+function getBackendDomain(project: any) {
+    // If there's a custom backend domain, use that; otherwise, fallback to "backend.<project_uuid>.<PROJECT_DEPLOYMENT_DNS_NAME>"
+    const projectsDomain = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
+    return project.backend_custom_domain || `backend.${project.project_uuid}.${projectsDomain}`;
+}
+
+/**
+ * Admin route: syncAdvertisements
+ * We'll POST to https://<backend-domain>/admin/syncAdvertisements using Bearer token
+ */
+router.post('/:projectId/admin/syncAdvertisements', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+    const adminBearerToken = project.admin_bearer_token;
+    if (!adminBearerToken) {
+        return res.status(400).json({ error: 'No admin bearer token stored for this project' });
+    }
+
+    const backendDomain = getBackendDomain(project);
+    const url = `https://${backendDomain}/admin/syncAdvertisements`;
+
+    try {
+        const response = await axios.post(url, {}, {
+            headers: {
+                Authorization: `Bearer ${adminBearerToken}`
+            },
+            timeout: 120000
+        });
+        return res.json({
+            message: 'syncAdvertisements called successfully',
+            data: response.data
+        });
+    } catch (error: any) {
+        logger.error({ error: error.message, backendDomain }, 'syncAdvertisements proxy error');
+        if (error.response) {
+            return res.status(error.response.status).json({ error: error.response.data });
+        }
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Admin route: startGASPSync
+ * We'll POST to https://<backend-domain>/admin/startGASPSync with Bearer token
+ */
+router.post('/:projectId/admin/startGASPSync', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+    const adminBearerToken = project.admin_bearer_token;
+    if (!adminBearerToken) {
+        return res.status(400).json({ error: 'No admin bearer token stored for this project' });
+    }
+
+    const backendDomain = getBackendDomain(project);
+    const url = `https://${backendDomain}/admin/startGASPSync`;
+
+    try {
+        const response = await axios.post(url, {}, {
+            headers: {
+                Authorization: `Bearer ${adminBearerToken}`
+            },
+            timeout: 3600000
+        });
+        return res.json({
+            message: 'startGASPSync called successfully',
+            data: response.data
+        });
+    } catch (error: any) {
+        logger.error({ error: error.message, backendDomain }, 'startGASPSync proxy error');
+        if (error.response) {
+            return res.status(error.response.status).json({ error: error.response.data });
+        }
+        return res.status(500).json({ error: error.message });
+    }
 });
 
 export default router;

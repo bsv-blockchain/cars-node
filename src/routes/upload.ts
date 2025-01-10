@@ -233,6 +233,36 @@ EXPOSE 80`
       }
     }
 
+    // Also handle advanced engine config from DB
+    let engineConfigObj: any = {};
+    try {
+      engineConfigObj = project.engine_config ? JSON.parse(project.engine_config) : {};
+    } catch (e) {
+      engineConfigObj = {};
+    }
+
+    // We'll map these to environment variables:
+    // - GASP_SYNC => engineConfigObj.gaspSync ? 'true' : 'false'
+    // - REQUEST_LOGGING => engineConfigObj.requestLogging ? 'true' : 'false'
+    // - SYNC_CONFIG_JSON => JSON.stringify(engineConfigObj.syncConfiguration)
+    // - LOG_TIME => engineConfigObj.logTime
+    // - LOG_PREFIX => engineConfigObj.logPrefix
+    // - THROW_ON_BROADCAST_FAIL => engineConfigObj.throwOnBroadcastFailure
+    // - ADMIN_BEARER_TOKEN => project.admin_bearer_token
+    const gaspSyncEnv = engineConfigObj.gaspSync === true ? 'true' : 'false';
+    const requestLoggingEnv = engineConfigObj.requestLogging === true ? 'true' : 'false';
+    const syncConfigJson = JSON.stringify(engineConfigObj.syncConfiguration || {});
+    const logTimeEnv = engineConfigObj.logTime === true ? 'true' : 'false';
+    const logPrefixEnv = typeof engineConfigObj.logPrefix === 'string' ? engineConfigObj.logPrefix : '[CARS OVERLAY ENGINE] ';
+    const throwOnBroadcastFailEnv = engineConfigObj.throwOnBroadcastFailure === true ? 'true' : 'false';
+    const adminBearerTokenEnv = project.admin_bearer_token || '';
+
+    const projectServerPrivateKey = project.private_key;
+    const keyBalance = await findBalanceForKey(projectServerPrivateKey, project.network);
+    if (keyBalance < 10000) {
+      await fundKey(process.env.MAINNET_PRIVATE_KEY!, projectServerPrivateKey, 10000, project.network);
+    }
+
     // Prepare dynamic Helm chart
     const helmDir = path.join(uploadDir, 'helm');
     fs.ensureDirSync(helmDir);
@@ -275,12 +305,6 @@ description: A chart to deploy a CARS project
 `
     );
 
-    const projectServerPrivateKey = project.private_key;
-    const keyBalance = await findBalanceForKey(projectServerPrivateKey, project.network);
-    if (keyBalance < 10000) {
-      await fundKey(process.env.MAINNET_PRIVATE_KEY!, projectServerPrivateKey, 10000, project.network);
-    }
-
     // deployment.yaml
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'deployment.yaml'),
@@ -308,9 +332,9 @@ spec:
         - name: HOSTING_URL
           value: "${valuesObj.ingressHostBackend}"
         - name: REQUEST_LOGGING
-          value: "true"
+          value: "${requestLoggingEnv}"
         - name: GASP_SYNC
-          value: "true"
+          value: "${gaspSyncEnv}"
         - name: NETWORK
           value: "${carsConfig.network}"
         - name: ARC_API_KEY
@@ -322,6 +346,17 @@ spec:
         - name: WEB_UI_CONFIG
           value: |-
             ${JSON.stringify(webUiConfigObj)}
+        - name: ADMIN_BEARER_TOKEN
+          value: "${adminBearerTokenEnv}"
+        - name: LOG_TIME
+          value: "${logTimeEnv}"
+        - name: LOG_PREFIX
+          value: "${logPrefixEnv}"
+        - name: THROW_ON_BROADCAST_FAIL
+          value: "${throwOnBroadcastFailEnv}"
+        - name: SYNC_CONFIG_JSON
+          value: |-
+            ${syncConfigJson}
         ports:
         - containerPort: 8080
       {{- end }}
@@ -334,7 +369,7 @@ spec:
 `
     );
 
-    // service.yaml (for the backend/frontend)
+    // service.yaml
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'service.yaml'),
       `apiVersion: v1
@@ -595,7 +630,7 @@ CARS System`;
 
         await sendDeploymentFailureEmail(emails, project, body, subject);
       } catch (ignore) {
-
+        // ignore
       }
     }
 
