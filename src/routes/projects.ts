@@ -541,7 +541,8 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
             billing: billingInfo,
             sslEnabled: status.domains.ssl,
             customDomains,
-            webUIConfig
+            webUIConfig,
+            engine_config: project.engine_config
         });
     } catch (error: any) {
         logger.error({ error: error.message }, 'Error getting project info');
