@@ -155,10 +155,23 @@ export default async (req: Request, res: Response) => {
         return res.status(400).json({ error: errMsg });
       }
 
-      // Create Dockerfile for frontend (serving static files)
+      // Create config and Dockerfile for frontend (serving static files)
+      fs.writeFileSync(
+        path.join(frontendDir, 'nginx.conf'),
+        `server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    location / {
+        try_files $uri /404.html /index.html;
+    }
+}`
+      );
+
       fs.writeFileSync(
         path.join(frontendDir, 'Dockerfile'),
         `FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY . /usr/share/nginx/html
 EXPOSE 80`
       );
