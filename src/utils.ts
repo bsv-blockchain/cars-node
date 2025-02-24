@@ -4,20 +4,20 @@ import path from 'path';
  * The shape of the "deployment-info.json" used by CARS
  */
 export interface CARSConfigInfo {
-    schema: string;
-    schemaVersion: string;
-    topicManagers?: Record<string, string>;
-    lookupServices?: Record<string, { serviceFactory: string; hydrateWith?: string }>;
-    frontend?: { language: string; sourceDirectory: string };
-    contracts?: { language: string; baseDirectory: string };
-    configs?: CARSConfig[];
+  schema: string;
+  schemaVersion: string;
+  topicManagers?: Record<string, string>;
+  lookupServices?: Record<string, { serviceFactory: string; hydrateWith?: string }>;
+  frontend?: { language: string; sourceDirectory: string };
+  contracts?: { language: string; baseDirectory: string };
+  configs?: CARSConfig[];
 }
 
 export interface CARSConfig {
-    provider: string;
-    projectID?: string;
-    deploy?: string[];
-    network?: string;
+  provider: string;
+  projectID?: string;
+  deploy?: string[];
+  network?: string;
 }
 
 /**
@@ -28,11 +28,11 @@ export interface CARSConfig {
  * respects the new features (adminBearerToken, sync config, etc.).
  */
 export function generateIndexTs(info: CARSConfigInfo): string {
-    let imports = `
+  let imports = `
 import OverlayExpress from '@bsv/overlay-express'
 `;
 
-    let mainFunction = `
+  let mainFunction = `
 const main = async () => {
   // Construct the OverlayExpress instance, including the admin bearer token if provided:
   const server = new OverlayExpress(
@@ -90,40 +90,40 @@ const main = async () => {
   });
 `;
 
-    // For each Topic Manager in the deployment-info.json
-    for (const [name, pathToTm] of Object.entries(info.topicManagers || {})) {
-        const importName = `tm_${name}`;
-        // Adjust path so it’s importable from inside the container
-        const pathToTmInContainer = pathToTm.replace('/backend', '');
-        imports += `import ${importName} from '${pathToTmInContainer}'\n`;
-        mainFunction += `  server.configureTopicManager('${name}', new ${importName}());\n`;
-    }
+  // For each Topic Manager in the deployment-info.json
+  for (const [name, pathToTm] of Object.entries(info.topicManagers || {})) {
+    const importName = `tm_${name}`;
+    // Adjust path so it’s importable from inside the container
+    const pathToTmInContainer = pathToTm.replace('/backend', '');
+    imports += `import ${importName} from '${pathToTmInContainer}'\n`;
+    mainFunction += `  server.configureTopicManager('${name}', new ${importName}());\n`;
+  }
 
-    // For each Lookup Service in the deployment-info.json
-    for (const [name, lsConfig] of Object.entries(info.lookupServices || {})) {
-        const importName = `lsf_${name}`;
-        const pathToLsInContainer = lsConfig.serviceFactory.replace('/backend', '');
-        imports += `import ${importName} from '${pathToLsInContainer}'\n`;
-        if (lsConfig.hydrateWith === 'mongo') {
-            mainFunction += `  server.configureLookupServiceWithMongo('${name}', ${importName});\n`;
-        } else if (lsConfig.hydrateWith === 'knex') {
-            mainFunction += `  server.configureLookupServiceWithKnex('${name}', ${importName});\n`;
-        } else {
-            // If neither mongo nor knex is specified, assume a direct factory
-            mainFunction += `  server.configureLookupService('${name}', ${importName}());\n`;
-        }
+  // For each Lookup Service in the deployment-info.json
+  for (const [name, lsConfig] of Object.entries(info.lookupServices || {})) {
+    const importName = `lsf_${name}`;
+    const pathToLsInContainer = lsConfig.serviceFactory.replace('/backend', '');
+    imports += `import ${importName} from '${pathToLsInContainer}'\n`;
+    if (lsConfig.hydrateWith === 'mongo') {
+      mainFunction += `  server.configureLookupServiceWithMongo('${name}', ${importName});\n`;
+    } else if (lsConfig.hydrateWith === 'knex') {
+      mainFunction += `  server.configureLookupServiceWithKnex('${name}', ${importName});\n`;
+    } else {
+      // If neither mongo nor knex is specified, assume a direct factory
+      mainFunction += `  server.configureLookupService('${name}', ${importName}());\n`;
     }
+  }
 
-    // Conclude
-    mainFunction += `
+  // Conclude
+  mainFunction += `
   await server.configureEngine();
   await server.start();
 };
 
 main()`;
 
-    // Return the entire file as a string
-    return imports + mainFunction;
+  // Return the entire file as a string
+  return imports + mainFunction;
 }
 
 /**
@@ -132,29 +132,29 @@ main()`;
  * (including overlay-express) at build time.
  */
 export function generatePackageJson(backendDependencies: Record<string, string>) {
-    const packageJsonContent = {
-        "name": "overlay-express-dev",
-        "version": "1.0.0",
-        "description": "",
-        "main": "index.ts",
-        "scripts": {
-            "start": "tsx index.ts"
-        },
-        "keywords": [],
-        "author": "",
-        "license": "ISC",
-        "dependencies": {
-            ...backendDependencies,
-            "@bsv/overlay-express": "^0.2.0",
-            "mysql2": "^3.11.5",
-            "tsx": "^4.19.2",
-            "chalk": "^5.3.0"
-        },
-        "devDependencies": {
-            "@types/node": "^22.10.1"
-        }
-    };
-    return packageJsonContent;
+  const packageJsonContent = {
+    "name": "overlay-express-dev",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.ts",
+    "scripts": {
+      "start": "tsx index.ts"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+      ...backendDependencies,
+      "@bsv/overlay-express": "^0.2.1",
+      "mysql2": "^3.11.5",
+      "tsx": "^4.19.2",
+      "chalk": "^5.3.0"
+    },
+    "devDependencies": {
+      "@types/node": "^22.10.1"
+    }
+  };
+  return packageJsonContent;
 }
 
 /**
@@ -163,7 +163,7 @@ export function generatePackageJson(backendDependencies: Record<string, string>)
  * with optional contract artifacts if "enableContracts" is true.
  */
 export function generateDockerfile(enableContracts: boolean) {
-    let file = `FROM node:22-alpine
+  let file = `FROM node:22-alpine
 WORKDIR /app
 COPY ./package.json .
 RUN npm i
@@ -171,16 +171,16 @@ COPY ./index.ts .
 COPY ./tsconfig.json .
 COPY ./wait-for-services.sh /wait-for-services.sh
 RUN chmod +x /wait-for-services.sh`
-    if (enableContracts) {
-        file += `
-COPY ./artifacts ./artifacts`
-    }
+  if (enableContracts) {
     file += `
+COPY ./artifacts ./artifacts`
+  }
+  file += `
 COPY ./src ./src
 
 EXPOSE 8080
 CMD ["/wait-for-services.sh", "mysql", "3306", "mongo", "27017", "npm", "run", "start"]`;
-    return file;
+  return file;
 }
 
 /**
@@ -188,7 +188,7 @@ CMD ["/wait-for-services.sh", "mysql", "3306", "mongo", "27017", "npm", "run", "
  * Just a minimal tsconfig enabling decorators as required by overlay.
  */
 export function generateTsConfig() {
-    return `{
+  return `{
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
@@ -202,7 +202,7 @@ export function generateTsConfig() {
  * before starting the Node process.
  */
 export function generateWaitScript() {
-    return `#!/bin/sh
+  return `#!/bin/sh
 
 set -e
 
