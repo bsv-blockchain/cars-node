@@ -21,9 +21,9 @@ import { sendDeploymentFailureEmail } from '../utils/email';
 const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
 
 export default async (req: Request, res: Response) => {
-  const { db, mainnetWallet: wallet }: { db: Knex, mainnetWallet: Wallet } = req as any;
+  const { db, mainnetWallet: wallet, testnetWallet }: { db: Knex, mainnetWallet: Wallet, testnetWallet: Wallet } = req as any;
   const { deploymentId, signature } = req.params;
-
+  f
   // Helper function to log steps to DB logs and logger
   async function logStep(message: string, level: 'info' | 'error' = 'info') {
     const logObj = {
@@ -273,7 +273,7 @@ EXPOSE 80`
     const projectServerPrivateKey = project.private_key;
     const keyBalance = await findBalanceForKey(projectServerPrivateKey, project.network);
     if (keyBalance < 10000) {
-      await fundKey(process.env.MAINNET_PRIVATE_KEY!, projectServerPrivateKey, 10000, project.network);
+      await fundKey(project.network === 'mainnet' ? wallet : testnetWallet, projectServerPrivateKey, 10000, project.network);
     }
 
     // Prepare dynamic Helm chart
