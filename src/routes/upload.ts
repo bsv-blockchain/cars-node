@@ -23,7 +23,7 @@ const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
 export default async (req: Request, res: Response) => {
   const { db, mainnetWallet: wallet, testnetWallet }: { db: Knex, mainnetWallet: Wallet, testnetWallet: Wallet } = req as any;
   const { deploymentId, signature } = req.params;
-  f
+
   // Helper function to log steps to DB logs and logger
   async function logStep(message: string, level: 'info' | 'error' = 'info') {
     const logObj = {
