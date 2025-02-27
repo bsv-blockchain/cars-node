@@ -21,7 +21,7 @@ import { sendDeploymentFailureEmail } from '../utils/email';
 const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
 
 export default async (req: Request, res: Response) => {
-  const { db, wallet }: { db: Knex; wallet: Wallet } = req as any;
+  const { db, mainnetWallet: wallet }: { db: Knex, mainnetWallet: Wallet } = req as any;
   const { deploymentId, signature } = req.params;
 
   // Helper function to log steps to DB logs and logger

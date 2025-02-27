@@ -390,7 +390,7 @@ router.post('/:projectId/deploys/list', requireRegisteredUser, requireProject, r
  * @returns { deploymentId, url } - URL for uploading release files.
  */
 router.post('/:projectId/deploy', requireRegisteredUser, async (req: Request, res: Response) => {
-    const { db, wallet }: { db: Knex, wallet: Wallet } = req as any;
+    const { db, mainnetWallet: wallet }: { db: Knex, mainnetWallet: Wallet } = req as any;
     const { projectId } = req.params;
     const identityKey = (req as any).auth.identityKey;
 
