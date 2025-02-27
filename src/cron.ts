@@ -2,18 +2,18 @@ import { CronJob } from 'cron';
 import { checkAndFundProjectKeys } from './utils/wallet';
 import logger from './logger';
 import type { Knex } from 'knex';
-import type { Wallet } from '@bsv/sdk';
 import { checkAndIssueCertificates } from './utils/SSLManager';
 import { billProjects } from './utils/billing';
+import { WalletInterface } from '@bsv/sdk';
 
-export function startCronJobs(db: Knex, wallet: Wallet) {
+export function startCronJobs(db: Knex, mainnetWalelt: WalletInterface, testnetWallet: WalletInterface) {
     // Check project keys every 5 minutes
     new CronJob(
         '*/5 * * * *',
         async () => {
             logger.info('Running cron jobs')
             try {
-                await checkAndFundProjectKeys(db, wallet);
+                await checkAndFundProjectKeys(db, mainnetWalelt, testnetWallet);
             } catch (error) {
                 logger.error('Error in project keys cron job:', error);
             }

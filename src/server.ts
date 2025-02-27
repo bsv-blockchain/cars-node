@@ -1,15 +1,16 @@
 import express from 'express';
 import db from './db';
 import logger from './logger';
-import authrite from 'authrite-express';
+import { createAuthMiddleware } from '@bsv/auth-express-middleware';
+import { createPaymentMiddleware } from '@bsv/payment-express-middleware';
 import bodyParser from 'body-parser';
-import { ProtoWallet, PrivateKey } from '@bsv/sdk';
 import routes from './routes';
 import upload from './routes/upload';
 import publicRoute from './routes/public';
 import { initCluster } from './init-cluster';
 import { startCronJobs } from './cron';
 import timeout from 'connect-timeout';
+import { makeWallet } from './utils/wallet';
 
 const port = parseInt(process.env.CARS_NODE_PORT || '7777', 10);
 const MAINNET_PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY;
@@ -20,11 +21,9 @@ if (!MAINNET_PRIVATE_KEY || !TESTNET_PRIVATE_KEY) {
 if (!process.env.TAAL_API_KEY_MAIN || !process.env.TAAL_API_KEY_TEST) {
     throw new Error('TAAL API keys not configured');
 }
-const SERVER_BASEURL = process.env.CARS_NODE_SERVER_BASEURL || 'http://localhost:7777';
-const wallet = new ProtoWallet(new PrivateKey(MAINNET_PRIVATE_KEY, 16));
 
-function haltOnTimedout (req, res, next) {
-  if (!req.timedout) next()
+function haltOnTimedout(req, res, next) {
+    if (!req.timedout) next()
 }
 
 async function main() {
@@ -33,8 +32,12 @@ async function main() {
     await db.migrate.latest();
     logger.info('Migrations completed.');
 
+    // We have two wallets: one on mainnet and one on testnet
+    const mainnetWallet = await makeWallet('main', MAINNET_PRIVATE_KEY!)
+    const testnetWallet = await makeWallet('test', TESTNET_PRIVATE_KEY!)
+
     await initCluster();
-    await startCronJobs(db, wallet);
+    startCronJobs(db, mainnetWallet, testnetWallet);
 
     const app = express();
 
@@ -131,16 +134,27 @@ async function main() {
     });
 
     // Authrite middleware
-    app.use(authrite.middleware({
-        serverPrivateKey: MAINNET_PRIVATE_KEY,
-        baseUrl: SERVER_BASEURL,
-        requestedCertificates: {
+    app.use(createAuthMiddleware({
+        wallet: mainnetWallet,
+        certificatesToRequest: {
             types: {
                 'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
             },
             certifiers: ['03285263f06139b66fb27f51cf8a92e9dd007c4c4b83876ad6c3e7028db450a4c2']
         }
     }));
+
+    // Payment middleware (including request price calculator for balance top-ups), which uses mainnet wallet
+    // app.use(createPaymentMiddleware({
+    //     wallet: mainnetWallet,
+    //     calculateRequestPrice: (req) => {
+    //         if (req.pa === '/pay') { // pseudo
+    //             return req.body.amount
+    //         } else {
+    //             return 0
+    //         }
+    //     }
+    // }))
 
     app.use('/api/v1', routes);
 
