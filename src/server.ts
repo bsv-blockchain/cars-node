@@ -59,7 +59,8 @@ async function main() {
     // Attach wallet and db to request context if needed
     app.use((req, res, next) => {
         (req as any).db = db;
-        (req as any).wallet = wallet;
+        (req as any).mainnetWallet = mainnetWallet;
+        (req as any).testnetWallet = testnetWallet;
         next();
     });
 
