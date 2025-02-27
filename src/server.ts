@@ -136,7 +136,9 @@ async function main() {
 
     // Authrite middleware
     app.use(createAuthMiddleware({
-        wallet: mainnetWallet
+        wallet: mainnetWallet,
+        logger: console,
+        logLevel: 'debug'
         // certificatesToRequest: {
         //     types: {
         //         'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
