@@ -145,16 +145,16 @@ async function main() {
     }));
 
     // Payment middleware (including request price calculator for balance top-ups), which uses mainnet wallet
-    // app.use(createPaymentMiddleware({
-    //     wallet: mainnetWallet,
-    //     calculateRequestPrice: (req) => {
-    //         if (req.pa === '/pay') { // pseudo
-    //             return req.body.amount
-    //         } else {
-    //             return 0
-    //         }
-    //     }
-    // }))
+    app.use(createPaymentMiddleware({
+        wallet: mainnetWallet,
+        calculateRequestPrice: (req: any) => {
+            if (req.path.startsWith('/api/v1/projects/') && req.path.endsWith('/pay')) {
+                return req.body.amount
+            } else {
+                return 0
+            }
+        }
+    }))
 
     app.use('/api/v1', routes);
 
