@@ -5,9 +5,9 @@ const router = Router();
 
 router.post('/register', async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
     try {
-        const certs = (req as any).authrite.certificates;
+        const certs = (req as any).auth.certificates;
         const email = certs[0].decryptedFields.email;
 
         // Insert user if not exists

@@ -35,7 +35,7 @@ function sanitizeTailValue(tail: number): number {
  */
 async function requireRegisteredUser(req: Request, res: Response, next: Function) {
     const { db }: { db: Knex } = req as any;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
     const user = await db('users').where({ identity_key: identityKey }).first();
     if (!user) {
         logger.warn({ identityKey }, 'User not registered');
@@ -65,7 +65,7 @@ async function requireProject(req: Request, res: Response, next: Function) {
  */
 async function requireProjectAdmin(req: Request, res: Response, next: Function) {
     const { db }: { db: Knex } = req as any;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
     const project = (req as any).project;
 
     const admin = await db('project_admins').where({ project_id: project.id, identity_key: identityKey }).first();
@@ -94,7 +94,7 @@ async function requireDeployment(req: Request, res: Response, next: Function) {
 
 async function requireProjectAdminForDeploy(req: Request, res: Response, next: Function) {
     const { db }: { db: Knex } = req as any;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
     const deploy = (req as any).deploy;
 
     const admin = await db('project_admins').where({ project_id: deploy.project_id, identity_key: identityKey }).first();
@@ -110,7 +110,7 @@ async function requireProjectAdminForDeploy(req: Request, res: Response, next: F
  */
 router.post('/create', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
     let { name, network, privateKey } = req.body;
     const projectId = crypto.randomBytes(16).toString('hex');
 
@@ -221,7 +221,7 @@ router.post('/:projectId/pay', requireRegisteredUser, requireProject, requirePro
  */
 router.post('/list', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
 
     const projects = await db('projects')
         .join('project_admins', 'projects.id', 'project_admins.project_id')
@@ -392,7 +392,7 @@ router.post('/:projectId/deploys/list', requireRegisteredUser, requireProject, r
 router.post('/:projectId/deploy', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db, wallet }: { db: Knex, wallet: Wallet } = req as any;
     const { projectId } = req.params;
-    const identityKey = (req as any).authrite.identityKey;
+    const identityKey = (req as any).auth.identityKey;
 
     const project = await db('projects').where({ project_uuid: projectId }).first();
     if (!project) return res.status(404).json({ error: 'Project not found' });
