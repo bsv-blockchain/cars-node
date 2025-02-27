@@ -136,13 +136,13 @@ async function main() {
 
     // Authrite middleware
     app.use(createAuthMiddleware({
-        wallet: mainnetWallet,
-        certificatesToRequest: {
-            types: {
-                'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
-            },
-            certifiers: ['03285263f06139b66fb27f51cf8a92e9dd007c4c4b83876ad6c3e7028db450a4c2']
-        }
+        wallet: mainnetWallet
+        // certificatesToRequest: {
+        //     types: {
+        //         'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
+        //     },
+        //     certifiers: ['03285263f06139b66fb27f51cf8a92e9dd007c4c4b83876ad6c3e7028db450a4c2']
+        // }
     }));
 
     // Payment middleware (including request price calculator for balance top-ups), which uses mainnet wallet

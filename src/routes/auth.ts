@@ -8,7 +8,12 @@ router.post('/register', async (req: Request, res: Response) => {
     const identityKey = (req as any).auth.identityKey;
     try {
         const certs = (req as any).auth.certificates;
-        const email = certs[0].decryptedFields.email;
+        let email: string | undefined
+        if (certs && certs.length) {
+            email = certs[0].decryptedFields.email;
+        } else {
+            email = 'placeholder@domain.com' // temporary
+        }
 
         // Insert user if not exists
         const existing = await db('users').where({ identity_key: identityKey }).first();
