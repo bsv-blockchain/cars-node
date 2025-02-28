@@ -8,7 +8,7 @@
         "setup": "tsx setup.ts"
     },
     "dependencies": {
-        "@bsv/auth-express-middleware": "^1.0.4",
+        "@bsv/auth-express-middleware": "^1.0.5",
         "@bsv/payment-express-middleware": "^1.0.1",
         "@bsv/sdk": "^1.3.24",
         "@bsv/wallet-toolbox-client": "^1.1.33",
