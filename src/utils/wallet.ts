@@ -57,7 +57,10 @@ export async function fundKey(
     }];
     const transaction = await fromWallet.createAction({
         outputs,
-        description: 'Funding CARS host for SHIP/SLAP'
+        description: 'Funding CARS host for SHIP/SLAP',
+        options: {
+            randomizeOutputs: false
+        }
     });
     const directTransaction: InternalizeActionArgs = {
         tx: transaction.tx!,
