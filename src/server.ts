@@ -153,6 +153,7 @@ async function main() {
         calculateRequestPrice: (req: any) => {
             logger.info(`${req.path} .startsWith('/api/v1/project/') && req.path.endsWith('/pay')`)
             if (req.path.startsWith('/api/v1/projects/') && req.path.endsWith('/pay')) {
+                logger.info(`Request ${req.path} charging ${req.body.amount} sats`)
                 return req.body.amount
             } else {
                 return 0
