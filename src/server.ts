@@ -151,6 +151,7 @@ async function main() {
     app.use(createPaymentMiddleware({
         wallet: mainnetWallet,
         calculateRequestPrice: (req: any) => {
+            logger.log(`${req.path} .startsWith('/api/v1/projects/') && req.path.endsWith('/pay')`)
             if (req.path.startsWith('/api/v1/projects/') && req.path.endsWith('/pay')) {
                 return req.body.amount
             } else {
