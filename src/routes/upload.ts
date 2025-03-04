@@ -53,17 +53,19 @@ export default async (req: Request, res: Response) => {
   let project: any;
 
   try {
+    // 1) Validate deployment record
     deploy = await db('deploys').where({ deployment_uuid: deploymentId }).first();
     if (!deploy) {
       return res.status(400).json({ error: 'Invalid deploymentId' });
     }
 
+    // 2) Fetch project
     project = await db('projects').where({ id: deploy.project_id }).first();
     if (!project) {
       return res.status(400).json({ error: 'Project not found' });
     }
 
-    // Verify signature
+    // 3) Verify signature
     const { valid } = await wallet.verifySignature({
       data: Utils.toArray(deploymentId, 'hex'),
       signature: Utils.toArray(signature, 'hex'),
@@ -76,27 +78,26 @@ export default async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    // Reject zero-balance and delinquent projects
+    // 4) Check project balance
     if (project.balance < 1) {
       return res.status(401).json({ error: `Project balance must be at least 1 satoshi to upload a deployment. Current balance: ${project.balance}` });
     }
 
-    // Store file locally
+    // 5) Store file locally
     const filePath = path.join('/tmp', `artifact_${deploymentId}.tgz`);
-    fs.writeFileSync(filePath, req.body); // raw data
-
+    fs.writeFileSync(filePath, req.body); // raw data from request
     await db('deploys').where({ id: deploy.id }).update({ file_path: filePath });
     await logStep(`File uploaded successfully, saved to ${filePath}`);
 
-    // Create a working directory for extraction and build
+    // 6) Create a working directory for extraction
     const uploadDir = path.join('/tmp', `build_${deploymentId}`);
     fs.ensureDirSync(uploadDir);
 
-    // Extract tarball
+    // 7) Extract tarball
     runCmd(`tar -xzf ${filePath} -C ${uploadDir}`);
     await logStep(`Tarball extracted at ${uploadDir}`);
 
-    // Validate deployment-info.json
+    // 8) Validate deployment-info.json
     const deploymentInfoPath = path.join(uploadDir, 'deployment-info.json');
     if (!fs.existsSync(deploymentInfoPath)) {
       const errMsg = 'deployment-info.json not found in tarball.';
@@ -113,6 +114,7 @@ export default async (req: Request, res: Response) => {
       return res.status(400).json({ error: errMsg });
     }
 
+    // 9) Check for matching CARS config
     const carsConfig: CARSConfig | undefined = deploymentInfo.configs?.find(
       (c: CARSConfig) =>
         c.provider === 'CARS' && c.projectID === project.project_uuid
@@ -130,21 +132,23 @@ export default async (req: Request, res: Response) => {
       return res.status(400).json({ error: errMsg });
     }
 
+    // 10) Determine whether we are deploying a frontend and/or backend
     const deployTargets = carsConfig.deploy || [];
     const backendEnabled = deployTargets.includes('backend');
     const frontendEnabled = deployTargets.includes('frontend');
 
     if (!frontendEnabled && !backendEnabled) {
-      const errMsg = `This deployment does not include a frontend or a backend. It must have at least one, even if it doesn't have both.`;
+      const errMsg = `No valid deploy targets found (must include "frontend" and/or "backend").`;
       await logStep(errMsg, 'error');
       return res.status(400).json({ error: errMsg });
     }
 
+    // 11) Build/push Docker images
     const registryHost = 'cars-registry:5000';
     let backendImage: string | null = null;
     let frontendImage: string | null = null;
 
-    // Build and push frontend image if needed
+    // --- Frontend build/push ---
     if (frontendEnabled) {
       frontendImage = `${registryHost}/cars-project-${project.project_uuid}/frontend:${deploymentId}`;
       await logStep('Building frontend image...');
@@ -155,7 +159,7 @@ export default async (req: Request, res: Response) => {
         return res.status(400).json({ error: errMsg });
       }
 
-      // Create config and Dockerfile for frontend (serving static files)
+      // Add minimal NGINX configuration for static serving
       fs.writeFileSync(
         path.join(frontendDir, 'nginx.conf'),
         `server {
@@ -168,6 +172,7 @@ export default async (req: Request, res: Response) => {
 }`
       );
 
+      // Dockerfile for serving static files
       fs.writeFileSync(
         path.join(frontendDir, 'Dockerfile'),
         `FROM nginx:alpine
@@ -176,13 +181,14 @@ COPY . /usr/share/nginx/html
 EXPOSE 80`
       );
 
+      // Build + push
       runCmd(`docker build -t ${frontendImage} .`, { cwd: frontendDir });
       await logStep(`Frontend image built: ${frontendImage}`);
       runCmd(`docker push ${frontendImage}`, { cwd: frontendDir });
       await logStep(`Frontend image pushed: ${frontendImage}`);
     }
 
-    // Build and push backend image if needed
+    // --- Backend build/push ---
     if (backendEnabled) {
       backendImage = `${registryHost}/cars-project-${project.project_uuid}/backend:${deploymentId}`;
       await logStep('Building backend image...');
@@ -199,10 +205,12 @@ EXPOSE 80`
         await logStep(errMsg, 'error');
         return res.status(400).json({ error: errMsg });
       }
+
       const backendPackageJson = JSON.parse(
         fs.readFileSync(backendPackageJsonPath, 'utf8')
       );
 
+      // Check if sCrypt contract compilation is needed
       let enableContracts = false;
       if (deploymentInfo.contracts && deploymentInfo.contracts.language === 'sCrypt') {
         enableContracts = true;
@@ -216,7 +224,7 @@ EXPOSE 80`
         return res.status(400).json({ error: errMsg });
       }
 
-      // Create backend container files
+      // Create supporting files for Docker build
       fs.writeFileSync(
         path.join(backendDir, 'Dockerfile'),
         generateDockerfile(enableContracts)
@@ -229,24 +237,23 @@ EXPOSE 80`
       );
       fs.writeFileSync(path.join(backendDir, 'index.ts'), generateIndexTs(deploymentInfo));
 
+      // Build + push
       runCmd(`docker build -t ${backendImage} ${backendDir}`);
       await logStep(`Backend image built: ${backendImage}`);
       runCmd(`docker push ${backendImage}`);
       await logStep(`Backend image pushed: ${backendImage}`);
     }
 
-    // Safely handle and escape WEB_UI_CONFIG
+    // 12) Prepare environment variables
     let webUiConfigObj = {};
     if (project.web_ui_config) {
       try {
         webUiConfigObj = JSON.parse(project.web_ui_config);
       } catch {
-        // If invalid JSON, default to empty object
         webUiConfigObj = {};
       }
     }
 
-    // Also handle advanced engine config from DB
     let engineConfigObj: any = {};
     try {
       engineConfigObj = project.engine_config ? JSON.parse(project.engine_config) : {};
@@ -254,14 +261,6 @@ EXPOSE 80`
       engineConfigObj = {};
     }
 
-    // We'll map these to environment variables:
-    // - GASP_SYNC => engineConfigObj.gaspSync ? 'true' : 'false'
-    // - REQUEST_LOGGING => engineConfigObj.requestLogging ? 'true' : 'false'
-    // - SYNC_CONFIG_JSON => JSON.stringify(engineConfigObj.syncConfiguration)
-    // - LOG_TIME => engineConfigObj.logTime
-    // - LOG_PREFIX => engineConfigObj.logPrefix
-    // - THROW_ON_BROADCAST_FAIL => engineConfigObj.throwOnBroadcastFailure
-    // - ADMIN_BEARER_TOKEN => project.admin_bearer_token
     const gaspSyncEnv = engineConfigObj.gaspSync === true ? 'true' : 'false';
     const requestLoggingEnv = engineConfigObj.requestLogging === true ? 'true' : 'false';
     const syncConfigJson = JSON.stringify(engineConfigObj.syncConfiguration || {});
@@ -270,13 +269,18 @@ EXPOSE 80`
     const throwOnBroadcastFailEnv = engineConfigObj.throwOnBroadcastFailure === true ? 'true' : 'false';
     const adminBearerTokenEnv = project.admin_bearer_token || '';
 
+    // 13) Fund project key if it’s too low
     const projectServerPrivateKey = project.private_key;
     const keyBalance = await findBalanceForKey(projectServerPrivateKey, project.network);
     if (keyBalance < 10000) {
-      await fundKey(project.network === 'mainnet' ? wallet : testnetWallet, projectServerPrivateKey, 10000, project.network);
+      try {
+        await fundKey(project.network === 'mainnet' ? wallet : testnetWallet, projectServerPrivateKey, 10000, project.network);
+      } catch (e) {
+        logger.error(`Server could not fund a project private key on ${project.network}!`, e)
+      }
     }
 
-    // Prepare dynamic Helm chart
+    // 14) Generate Helm chart
     const helmDir = path.join(uploadDir, 'helm');
     fs.ensureDirSync(helmDir);
 
@@ -290,11 +294,12 @@ description: A chart to deploy a CARS project
 `
     );
 
-    // We'll create services if backendEnabled is true
+    // We'll create MySQL/Mongo if backendEnabled is true
     const useMySQL = backendEnabled;
     const useMongo = backendEnabled;
     const ingressHost = `${project.project_uuid}.${projectsDomain}`;
 
+    // Values for the chart
     const valuesObj = {
       backendImage,
       frontendImage,
@@ -303,8 +308,13 @@ description: A chart to deploy a CARS project
       ingressHostBackend: `backend.${ingressHost}`,
       ingressCustomBackend: project.backend_custom_domain,
       useMySQL,
-      useMongo
+      useMongo,
+      storage: {
+        mysqlSize: '20Gi',
+        mongoSize: '20Gi',
+      },
     };
+
     fs.writeFileSync(path.join(helmDir, 'values.yaml'), JSON.stringify(valuesObj, null, 2));
 
     fs.ensureDirSync(path.join(helmDir, 'templates'));
@@ -318,13 +328,17 @@ description: A chart to deploy a CARS project
 `
     );
 
-    // deployment.yaml
+    //
+    // 14a) Main Deployment for our app (frontend + backend)
+    //
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'deployment.yaml'),
       `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "cars-project.fullname" . }}-deployment
+  labels:
+    app: {{ include "cars-project.fullname" . }}
 spec:
   replicas: 1
   selector:
@@ -343,7 +357,7 @@ spec:
         - name: SERVER_PRIVATE_KEY
           value: "${projectServerPrivateKey}"
         - name: HOSTING_URL
-          value: "${valuesObj.ingressHostBackend}"
+          value: "{{ .Values.ingressHostBackend }}"
         - name: REQUEST_LOGGING
           value: "${requestLoggingEnv}"
         - name: GASP_SYNC
@@ -382,13 +396,17 @@ spec:
 `
     );
 
-    // service.yaml
+    //
+    // 14b) Service for our combined Pod
+    //
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'service.yaml'),
       `apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cars-project.fullname" . }}-service
+  labels:
+    app: {{ include "cars-project.fullname" . }}
 spec:
   type: ClusterIP
   selector:
@@ -397,34 +415,41 @@ spec:
   {{- if .Values.backendImage }}
   - port: 8080
     targetPort: 8080
+    protocol: TCP
     name: backend
   {{- end }}
   {{- if .Values.frontendImage }}
   - port: 80
     targetPort: 80
+    protocol: TCP
     name: frontend
   {{- end }}
 `
     );
 
-    // ingress.yaml
-    let tlsHosts = ''
+    //
+    // 14c) Ingress for both frontend and backend
+    //
+    let tlsHosts = '';
     if (frontendEnabled) {
-      tlsHosts += `      - ${valuesObj.ingressHostFrontend}\n`
+      tlsHosts += `      - {{ .Values.ingressHostFrontend }}\n`;
       if (valuesObj.ingressCustomFrontend) {
-        tlsHosts += `      - ${valuesObj.ingressCustomFrontend}\n`
+        tlsHosts += `      - {{ .Values.ingressCustomFrontend }}\n`;
       }
     }
     if (backendEnabled) {
-      tlsHosts += `      - ${valuesObj.ingressHostBackend}\n`
+      tlsHosts += `      - {{ .Values.ingressHostBackend }}\n`;
       if (valuesObj.ingressCustomBackend) {
-        tlsHosts += `      - ${valuesObj.ingressCustomBackend}\n`
+        tlsHosts += `      - {{ .Values.ingressCustomBackend }}\n`;
       }
     }
+
     let ingressYaml = `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "cars-project.fullname" . }}-ingress
+  labels:
+    app: {{ include "cars-project.fullname" . }}
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-production"
 spec:
@@ -433,9 +458,11 @@ spec:
     - hosts:
 ${tlsHosts}      secretName: project-${project.project_uuid}-tls
   rules:
-`
+`;
+
     if (frontendEnabled) {
-      ingressYaml += `  - host: {{ .Values.ingressHostFrontend }}
+      ingressYaml += `
+  - host: {{ .Values.ingressHostFrontend }}
     http:
       paths:
       - path: /
@@ -445,9 +472,10 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
             name: {{ include "cars-project.fullname" . }}-service
             port:
               number: 80
-`
+`;
       if (project.frontend_custom_domain) {
-        ingressYaml += `  - host: {{ .Values.ingressCustomFrontend }}
+        ingressYaml += `
+  - host: {{ .Values.ingressCustomFrontend }}
     http:
       paths:
       - path: /
@@ -457,11 +485,12 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
             name: {{ include "cars-project.fullname" . }}-service
             port:
               number: 80
-`
+`;
       }
     }
     if (backendEnabled) {
-      ingressYaml += `  - host: {{ .Values.ingressHostBackend }}
+      ingressYaml += `
+  - host: {{ .Values.ingressHostBackend }}
     http:
       paths:
       - path: /
@@ -471,9 +500,10 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
             name: {{ include "cars-project.fullname" . }}-service
             port:
               number: 8080
-`
+`;
       if (project.backend_custom_domain) {
-        ingressYaml += `  - host: {{ .Values.ingressCustomBackend }}
+        ingressYaml += `
+  - host: {{ .Values.ingressCustomBackend }}
     http:
       paths:
       - path: /
@@ -483,115 +513,193 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
             name: {{ include "cars-project.fullname" . }}-service
             port:
               number: 8080
-`
+`;
       }
     }
+
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'ingress.yaml'),
       ingressYaml
     );
 
-    // If we are using MySQL and Mongo, create Pods and Services for them
-    if (useMySQL) {
-      // mysql.yaml (Pod)
-      fs.writeFileSync(
-        path.join(helmDir, 'templates', 'mysql.yaml'),
-        `apiVersion: v1
-kind: Pod
+    //
+    // 14d) MySQL: a StatefulSet + Service + PVC (only if useMySQL)
+    //
+    fs.writeFileSync(
+      path.join(helmDir, 'templates', 'mysql-statefulset.yaml'),
+      `{{- if .Values.useMySQL }}
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
   name: mysql
   labels:
     app: mysql
 spec:
-  containers:
-  - name: mysql
-    image: mysql:8.0
-    env:
-    - name: MYSQL_ROOT_PASSWORD
-      value: "rootpassword"
-    - name: MYSQL_DATABASE
-      value: "projectdb"
-    - name: MYSQL_USER
-      value: "projectUser"
-    - name: MYSQL_PASSWORD
-      value: "projectPass"
-    ports:
-    - containerPort: 3306
-`
-      );
+  selector:
+    matchLabels:
+      app: mysql
+  serviceName: mysql-headless
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "rootpassword"
+            - name: MYSQL_DATABASE
+              value: "projectdb"
+            - name: MYSQL_USER
+              value: "projectUser"
+            - name: MYSQL_PASSWORD
+              value: "projectPass"
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.storage.mysqlSize | quote }}
 
-      // mysql-service.yaml
-      fs.writeFileSync(
-        path.join(helmDir, 'templates', 'mysql-service.yaml'),
-        `apiVersion: v1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless
+  labels:
+    app: mysql
+spec:
+  clusterIP: None
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+      protocol: TCP
+      name: mysql
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: mysql
+  labels:
+    app: mysql
 spec:
   selector:
     app: mysql
   ports:
-  - port: 3306
-    targetPort: 3306
+    - port: 3306
+      targetPort: 3306
+      protocol: TCP
+      name: mysql
+{{- end }}
 `
-      );
-    }
+    );
 
-    if (useMongo) {
-      // mongo.yaml (Pod)
-      fs.writeFileSync(
-        path.join(helmDir, 'templates', 'mongo.yaml'),
-        `apiVersion: v1
-kind: Pod
+    //
+    // 14e) MongoDB: a StatefulSet + Service + PVC (only if useMongo)
+    //
+    fs.writeFileSync(
+      path.join(helmDir, 'templates', 'mongo-statefulset.yaml'),
+      `{{- if .Values.useMongo }}
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
   name: mongo
   labels:
     app: mongo
 spec:
-  containers:
-  - name: mongo
-    image: mongo:6.0
-    env:
-    - name: MONGO_INITDB_ROOT_USERNAME
-      value: "root"
-    - name: MONGO_INITDB_ROOT_PASSWORD
-      value: "rootpassword"
-    ports:
-    - containerPort: 27017
-`
-      );
+  serviceName: mongo-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:6.0
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "root"
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              value: "rootpassword"
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.storage.mongoSize | quote }}
 
-      // mongo-service.yaml
-      fs.writeFileSync(
-        path.join(helmDir, 'templates', 'mongo-service.yaml'),
-        `apiVersion: v1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-headless
+  labels:
+    app: mongo
+spec:
+  clusterIP: None
+  selector:
+    app: mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+      protocol: TCP
+      name: mongo
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: mongo
+  labels:
+    app: mongo
 spec:
   selector:
     app: mongo
   ports:
-  - port: 27017
-    targetPort: 27017
+    - port: 27017
+      targetPort: 27017
+      protocol: TCP
+      name: mongo
+{{- end }}
 `
-      );
-    }
+    );
 
     await logStep(`Helm chart generated at ${helmDir}`);
 
+    // 15) Deploy with Helm
     const namespace = `cars-project-${project.project_uuid}`;
     const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}`;
 
-    // Deploy with helm using --atomic and --create-namespace
     runCmd(`helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic --create-namespace`);
+    await logStep(`Helm release ${helmReleaseName} deployed for project ${project.project_uuid}`);
 
-    await logStep(`Helm release ${helmReleaseName} deployed`);
-
-    // Wait for rollout
+    // 16) Wait for the main deployment to roll out
     runCmd(`kubectl rollout status deployment/${helmReleaseName}-deployment -n ${namespace}`);
     await logStep(`Project ${project.project_uuid}, release ${deploymentId} rolled out successfully.`);
 
+    // Log final URLs
     if (frontendEnabled) {
       await logStep(`Frontend URL: ${valuesObj.ingressHostFrontend}`);
     }
@@ -599,16 +707,22 @@ spec:
       await logStep(`Backend URL: ${valuesObj.ingressHostBackend}`);
     }
 
+    // Return success response
     const responseObj: any = {
       message: 'Deployment completed successfully',
     };
     if (frontendEnabled) responseObj.frontendUrl = valuesObj.ingressHostFrontend;
     if (backendEnabled) responseObj.backendUrl = valuesObj.ingressHostBackend;
-    if (frontendEnabled && project.frontend_custom_domain) responseObj.frontendCustomDomain = project.frontend_custom_domain;
-    if (backendEnabled && project.backend_custom_domain) responseObj.backendCustomDomain = project.backend_custom_domain;
+    if (frontendEnabled && project.frontend_custom_domain) {
+      responseObj.frontendCustomDomain = project.frontend_custom_domain;
+    }
+    if (backendEnabled && project.backend_custom_domain) {
+      responseObj.backendCustomDomain = project.backend_custom_domain;
+    }
 
     res.json(responseObj);
   } catch (error: any) {
+    // Handle errors gracefully, logging them and returning a 500
     if (deploy && project) {
       await db('logs').insert({
         project_id: project.id,
@@ -617,12 +731,12 @@ spec:
       });
       logger.error(`Error handling upload: ${error.message}`, { deploymentId });
 
+      // Attempt to email project admins about the failure
       try {
-        // Send deployment failure email
         const admins = await db('project_admins')
           .join('users', 'users.identity_key', 'project_admins.identity_key')
           .where({ 'project_admins.project_id': project.id })
-          .select('users.email', 'users.identity_key', 'users.email');
+          .select('users.email', 'users.identity_key');
         const emails = admins.map((a: any) => a.email);
 
         const subject = `Deployment Failure for Project: ${project.name}`;
@@ -643,7 +757,7 @@ CARS System`;
 
         await sendDeploymentFailureEmail(emails, project, body, subject);
       } catch (ignore) {
-        // ignore
+        // ignore any email-sending errors
       }
     }
 
