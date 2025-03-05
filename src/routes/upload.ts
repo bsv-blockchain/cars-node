@@ -310,8 +310,8 @@ description: A chart to deploy a CARS project
       useMySQL,
       useMongo,
       storage: {
-        mysqlSize: '10Gi',
-        mongoSize: '5Gi',
+        mysqlSize: '20Gi',
+        mongoSize: '20Gi',
       },
     };
 
