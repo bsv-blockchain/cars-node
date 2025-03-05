@@ -7,7 +7,7 @@ import { disableIngress, enableIngress } from './ingress';
 // Configurable billing rates (default values as before)
 const CPU_RATE_PER_CORE_5MIN = parseInt(process.env.CPU_RATE_PER_CORE_5MIN || "1000", 10);
 const MEM_RATE_PER_GB_5MIN = parseInt(process.env.MEM_RATE_PER_GB_5MIN || "500", 10);
-const DISK_RATE_PER_GB_5MIN = parseInt(process.env.DISK_RATE_PER_GB_5MIN || "100", 10);
+const DISK_RATE_PER_GB_5MIN = parseInt(process.env.DISK_RATE_PER_GB_5MIN || "10", 10);
 const NET_RATE_PER_GB_5MIN = parseInt(process.env.NET_RATE_PER_GB_5MIN || "200", 10);
 
 // Prometheus URL

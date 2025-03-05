@@ -7,7 +7,7 @@ export default async (_, res) => {
 
     const cpuRate = parseInt(process.env.CPU_RATE_PER_CORE_5MIN || "1000", 10);
     const memRate = parseInt(process.env.MEM_RATE_PER_GB_5MIN || "500", 10);
-    const diskRate = parseInt(process.env.DISK_RATE_PER_GB_5MIN || "100", 10);
+    const diskRate = parseInt(process.env.DISK_RATE_PER_GB_5MIN || "10", 10);
     const netRate = parseInt(process.env.NET_RATE_PER_GB_5MIN || "200", 10);
 
     const mainnetWallet = new ProtoWallet(new PrivateKey(mainnetKey, 16));
