@@ -226,7 +226,7 @@ router.post('/list', requireRegisteredUser, async (req: Request, res: Response) 
     const projects = await db('projects')
         .join('project_admins', 'projects.id', 'project_admins.project_id')
         .where('project_admins.identity_key', identityKey)
-        .select('projects.project_uuid as id', 'projects.name', 'project.network', 'projects.balance', 'projects.created_at');
+        .select('projects.project_uuid as id', 'projects.name', 'projects.network', 'projects.balance', 'projects.created_at');
 
     res.json({ projects });
 });
