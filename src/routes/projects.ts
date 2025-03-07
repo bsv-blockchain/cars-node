@@ -217,7 +217,7 @@ router.post('/:projectId/pay', requireRegisteredUser, requireProject, requirePro
 
 /**
  * List projects where user is admin.
- * Returns project name, id, balance, created_at.
+ * Returns project name, network, id, balance, created_at.
  */
 router.post('/list', requireRegisteredUser, async (req: Request, res: Response) => {
     const { db }: { db: Knex } = req as any;
@@ -226,7 +226,7 @@ router.post('/list', requireRegisteredUser, async (req: Request, res: Response) 
     const projects = await db('projects')
         .join('project_admins', 'projects.id', 'project_admins.project_id')
         .where('project_admins.identity_key', identityKey)
-        .select('projects.project_uuid as id', 'projects.name', 'projects.balance', 'projects.created_at');
+        .select('projects.project_uuid as id', 'projects.name', 'project.network', 'projects.balance', 'projects.created_at');
 
     res.json({ projects });
 });
