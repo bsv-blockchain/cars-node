@@ -145,7 +145,7 @@ export function generatePackageJson(backendDependencies: Record<string, string>)
     "license": "ISC",
     "dependencies": {
       ...backendDependencies,
-      "@bsv/overlay-express": "^0.3.4",
+      "@bsv/overlay-express": "^0.3.5",
       "mysql2": "^3.11.5",
       "tsx": "^4.19.2",
       "chalk": "^5.3.0"
