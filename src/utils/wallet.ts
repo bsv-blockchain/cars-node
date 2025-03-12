@@ -89,16 +89,10 @@ export async function checkAndFundProjectKeys(db: Knex, mainnetWalelt: WalletInt
             const key = project.private_key;
             const balance = await findBalanceForKey(key.private_key, project.network);
 
-            if (balance < 30000) {
-                const neededAmount = 30000 - balance;
-
-                // For testnet, use 10% of mainnet threshold
-                const fundingAmount = project.network === 'testnet'
-                    ? Math.min(neededAmount, project.balance * 0.1)
-                    : Math.min(neededAmount, project.balance);
-
-                if (fundingAmount <= 5000) continue;
-
+            if (balance < 100) {
+                const neededAmount = 500 - balance;
+                const fundingAmount = Math.min(neededAmount, project.balance);
+                if (fundingAmount <= 100) continue;
                 const sourceWallet = project.network === 'mainnet'
                     ? mainnetWalelt
                     : testnetWallet

@@ -272,9 +272,9 @@ EXPOSE 80`
     // 13) Fund project key if it’s too low
     const projectServerPrivateKey = project.private_key;
     const keyBalance = await findBalanceForKey(projectServerPrivateKey, project.network);
-    if (keyBalance < 10000) {
+    if (keyBalance < 100) {
       try {
-        await fundKey(project.network === 'mainnet' ? wallet : testnetWallet, projectServerPrivateKey, 10000, project.network);
+        await fundKey(project.network === 'mainnet' ? wallet : testnetWallet, projectServerPrivateKey, 500, project.network);
       } catch (e) {
         logger.error(`Server could not fund a project private key on ${project.network}!`, e)
       }
