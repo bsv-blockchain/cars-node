@@ -751,20 +751,41 @@ router.post('/:projectId/logs/resource/:resource', requireRegisteredUser, requir
         const pods = JSON.parse(podsOutput.toString());
 
         if (!pods.items?.length) {
-            return res.status(404).json({ error: `No ${resource} pods found` });
+            return res.status(404).json({ error: `No ${resource} pods found, are things finished deploying?` });
         }
 
-        let logs
-        if (resource === 'mongo' || resource === 'mysql') {
-            const cmd = `kubectl logs -n ${namespace} ${resource} --since=${since} --tail=${sanitizedTail}`;
+        let logs;
+        let podName;
+
+        if (resource === 'mysql' || resource === 'mongo') {
+            // Define the expected pod name
+            podName = `${resource}-0`; // mysql-0 or mongo-0
+
+            // Check if the pod exists
+            const pod = pods.items.find(p => p.metadata.name === podName);
+            if (!pod) {
+                return res.status(404).json({ error: `No logs found for ${resource}, does your project have it and is it deployed?` });
+            }
+
+            // Fetch logs from the pod (no container specification needed)
+            const cmd = `kubectl logs -n ${namespace} ${podName} --since=${since} --tail=${sanitizedTail}`;
             logs = execSync(cmd).toString();
         } else {
+            // For frontend and backend, find the main deployment pod
             const pod = pods.items.find(x => x.metadata.name.startsWith('cars-project-'));
             if (!pod) {
-                return res.status(404).json({ error: `No ${resource} pods found` });
+                return res.status(404).json({ error: `No pod found for ${resource}` });
             }
-            const cmd = `kubectl logs -n ${namespace} ${pod.metadata.name} -c ${resource} --since=${since} --tail=${sanitizedTail}`;
-            console.log(cmd)
+            podName = pod.metadata.name;
+
+            // Verify the container exists in the pod
+            const container = pod.spec.containers.find(c => c.name === resource);
+            if (!container) {
+                return res.status(404).json({ error: `No container ${resource} found in pod ${podName}` });
+            }
+
+            // Fetch logs from the specific container
+            const cmd = `kubectl logs -n ${namespace} ${podName} -c ${resource} --since=${since} --tail=${sanitizedTail}`;
             logs = execSync(cmd).toString();
         }
 
