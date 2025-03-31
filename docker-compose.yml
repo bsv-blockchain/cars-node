@@ -47,6 +47,10 @@ services:
     volumes:
       - ./src:/app/src
       - ./local-data/kubeconfig:/kubeconfig
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
 
   k3s-server:
     image: rancher/k3s:latest
@@ -56,10 +60,10 @@ services:
       - /run
       - /var/run
     ulimits:
-      nproc: 65535
+      nproc: 1048576
       nofile:
-        soft: 65535
-        hard: 65535
+        soft: 1048576
+        hard: 1048576
     command:
       - server
       - "--tls-san=cars-k3s"
@@ -92,6 +96,10 @@ services:
     command: [ "--insecure-registry=cars-registry:5000" ]
     volumes:
       - dind-storage:/var/lib/docker
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
 
 volumes:
   k3s-server: {}
