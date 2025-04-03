@@ -435,6 +435,7 @@ spec:
       tlsHosts += `      - {{ .Values.ingressHostFrontend }}\n`;
       if (valuesObj.ingressCustomFrontend) {
         tlsHosts += `      - {{ .Values.ingressCustomFrontend }}\n`;
+        tlsHosts += `      - www.{{ .Values.ingressCustomFrontend }}\n`;
       }
     }
     if (backendEnabled) {
@@ -476,6 +477,16 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
       if (project.frontend_custom_domain) {
         ingressYaml += `
   - host: {{ .Values.ingressCustomFrontend }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "cars-project.fullname" . }}-service
+            port:
+              number: 80
+  - host: www.{{ .Values.ingressCustomFrontend }}
     http:
       paths:
       - path: /
