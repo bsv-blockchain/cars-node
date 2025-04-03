@@ -14,7 +14,6 @@ import {
   generateTsConfig,
   generateWaitScript,
 } from '../utils';
-import crypto from 'crypto';
 import { findBalanceForKey, fundKey } from '../utils/wallet';
 import { sendDeploymentFailureEmail } from '../utils/email';
 
