@@ -137,14 +137,28 @@ async function main() {
     // Authrite middleware
     app.use(createAuthMiddleware({
         wallet: mainnetWallet,
-        logger: console,
-        logLevel: 'debug'
-        // certificatesToRequest: {
-        //     types: {
-        //         'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
-        //     },
-        //     certifiers: ['03285263f06139b66fb27f51cf8a92e9dd007c4c4b83876ad6c3e7028db450a4c2']
-        // }
+        onCertificatesReceived: async (identityKey, certs) => {
+            try {
+                if (
+                    certs.length === 1 &&
+                    typeof certs[0].fields.email === 'string'
+                    && certs[0].certifier === '02cf6cdf466951d8dfc9e7c9367511d0007ed6fba35ed42d425cc412fd6cfd4a17' &&
+                    certs[0].type === 'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA='
+                ) {
+                    await db('users').where('identity_key', '=', identityKey).update({
+                        email: certs[0].fields.email
+                    })
+                }
+            } catch (e) {
+                console.error('Error associating certificate with user', e)
+            }
+        },
+        certificatesToRequest: {
+            types: {
+                'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
+            },
+            certifiers: ['02cf6cdf466951d8dfc9e7c9367511d0007ed6fba35ed42d425cc412fd6cfd4a17']
+        }
     }));
 
     // Payment middleware (including request price calculator for balance top-ups), which uses mainnet wallet
