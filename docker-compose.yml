@@ -78,8 +78,8 @@ services:
       - ./local-data/kubeconfig:/output
       - ./registries.yaml:/etc/rancher/k3s/registries.yaml:ro
     ports:
-      - "8081:80"
-      - "8082:443"
+      - "6080:80"
+      - "6443:443"
 
   registry:
     image: registry:2
