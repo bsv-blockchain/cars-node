@@ -39,7 +39,7 @@ export async function sendEmailToAdmins(emails: string[], project: Project, body
 export async function sendThresholdEmail(emails: string[], project: Project, newBalance: number, threshold: number) {
     const subject = `Billing Alert for Project: ${project.name}`;
     let level = 'Notice';
-    if (newBalance < 0) level = 'Urgent';
+    if (newBalance < 10000000) level = 'Urgent';
 
     const body = `Hello,
 

@@ -16,10 +16,7 @@ const PROMETHEUS_URL = process.env.PROMETHEUS_URL || 'http://prometheus-kube-pro
 // Thresholds at which to send email alerts (sane defaults):
 // descending order, from high to negative.
 const BILLING_THRESHOLDS = [
-    50000000, 20000000, 10000000, 5000000, 2000000, 1000000,
-    500000, 200000, 100000, 50000, 20000, 5000, 1000, 500, 0, -500,
-    -2000, -10000, -50000, -100000, -200000, -300000, -400000, -500000,
-    -700000, -1000000, -5000000, -10000000, -20000000, -50000000
+    1000000000, 200000000, 30000000, 10000000, 0, -1000000, -20000000, -100000000, -1000000000, -10000000000
 ];
 
 async function queryPrometheus(query: string): Promise<number> {
