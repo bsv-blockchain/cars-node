@@ -141,12 +141,12 @@ async function main() {
             try {
                 if (
                     certs.length === 1 &&
-                    typeof certs[0].fields.email === 'string'
+                    typeof certs[0].decryptedFields!.email === 'string'
                     && certs[0].certifier === '02cf6cdf466951d8dfc9e7c9367511d0007ed6fba35ed42d425cc412fd6cfd4a17' &&
                     certs[0].type === 'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA='
                 ) {
                     await db('users').where('identity_key', '=', identityKey).update({
-                        email: certs[0].fields.email
+                        email: certs[0].decryptedFields!.email
                     })
                 }
             } catch (e) {
