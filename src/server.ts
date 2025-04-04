@@ -153,12 +153,12 @@ async function main() {
                 console.error('Error associating certificate with user', e)
             }
         },
-        certificatesToRequest: {
-            types: {
-                'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
-            },
-            certifiers: ['02cf6cdf466951d8dfc9e7c9367511d0007ed6fba35ed42d425cc412fd6cfd4a17']
-        }
+        // certificatesToRequest: {
+        //     types: {
+        //         'exOl3KM0dIJ04EW5pZgbZmPag6MdJXd3/a1enmUU/BA=': ['email']
+        //     },
+        //     certifiers: ['02cf6cdf466951d8dfc9e7c9367511d0007ed6fba35ed42d425cc412fd6cfd4a17']
+        // }
     }));
 
     // Payment middleware (including request price calculator for balance top-ups), which uses mainnet wallet
