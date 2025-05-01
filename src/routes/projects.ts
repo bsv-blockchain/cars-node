@@ -987,8 +987,8 @@ router.post('/:projectId/settings/update', requireRegisteredUser, requireProject
  * ==============================
  * PROXY ADMIN ENDPOINTS
  * ==============================
- * Admins can request we call /admin/syncAdvertisements or /admin/startGASPSync
- * on their deployed OverlayExpress instance. We'll find the right domain,
+ * Admins can request things like /admin/syncAdvertisements or /admin/startGASPSync
+ * on their deployed OverlayExpress instance, or evict outputs. We'll find the right domain,
  * attach the stored admin_bearer_token, and proxy the request.
  */
 
@@ -1024,6 +1024,48 @@ router.post('/:projectId/admin/syncAdvertisements', requireRegisteredUser, requi
         });
         return res.json({
             message: 'syncAdvertisements called successfully',
+            data: response.data
+        });
+    } catch (error: any) {
+        logger.error({ error: error.message, backendDomain }, 'syncAdvertisements proxy error');
+        if (error.response) {
+            return res.status(error.response.status).json({ error: error.response.data });
+        }
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Admin route: evictOutpoint
+ * We'll POST to https://<backend-domain>/admin/evictOutpoint using Bearer token
+ */
+router.post('/:projectId/admin/evictOutpoint', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+    const adminBearerToken = project.admin_bearer_token;
+    if (!adminBearerToken) {
+        return res.status(400).json({ error: 'No admin bearer token stored for this project' });
+    }
+    if (!req.body.service || !req.body.txid || typeof req.body.outputIndex !== 'number' || !req.body.topic) {
+        return res.status(400).json({ error: 'No service, txid, outputIndex, or topic' })
+    }
+
+    const backendDomain = getBackendDomain(project);
+    const url = `https://${backendDomain}/admin/syncAdvertisements`;
+
+    try {
+        const response = await axios.post(url, {
+            service: req.body.service,
+            txid: req.body.txid,
+            outputIndex: req.body.outputIndex,
+            topic: req.body.topic
+        }, {
+            headers: {
+                Authorization: `Bearer ${adminBearerToken}`
+            },
+            timeout: 120000
+        });
+        return res.json({
+            message: 'evictOutpoint called successfully',
             data: response.data
         });
     } catch (error: any) {
