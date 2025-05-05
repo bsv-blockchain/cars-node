@@ -4,7 +4,7 @@ import { execSync } from 'child_process'
 
 export async function checkAndIssueCertificates() {
     try {
-        const ingressList = JSON.parse(execSync('kubectl get ingresses --all-namespaces -o json').toString());
+        const ingressList = JSON.parse(execSync('kubectl get ingresses -l created-by=cars --all-namespaces -o json').toString());
         for (const ing of ingressList.items) {
             const hosts: string[] = [];
             const paths = ing.spec.rules || [];
