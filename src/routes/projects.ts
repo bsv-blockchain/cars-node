@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import logger from '../logger';
 import type { Knex } from 'knex';
-import { Utils, Wallet } from '@bsv/sdk';
+import { Utils, WalletInterface } from '@bsv/sdk';
 import { execSync } from 'child_process';
 import dns from 'dns/promises';
 import { sendAdminNotificationEmail, sendWelcomeEmail, sendDomainChangeEmail } from '../utils/email';
@@ -390,7 +390,7 @@ router.post('/:projectId/deploys/list', requireRegisteredUser, requireProject, r
  * @returns { deploymentId, url } - URL for uploading release files.
  */
 router.post('/:projectId/deploy', requireRegisteredUser, async (req: Request, res: Response) => {
-    const { db, mainnetWallet: wallet }: { db: Knex, mainnetWallet: Wallet } = req as any;
+    const { db, mainnetWallet: wallet }: { db: Knex, mainnetWallet: WalletInterface } = req as any;
     const { projectId } = req.params;
     const identityKey = (req as any).auth.identityKey;
 
@@ -995,7 +995,7 @@ router.post('/:projectId/settings/update', requireRegisteredUser, requireProject
 /**
  * Helper for constructing the backend domain for the project
  */
-function getBackendDomain(project: any) {
+export function getBackendDomain(project: any) {
     // If there's a custom backend domain, use that; otherwise, fallback to "backend.<project_uuid>.<PROJECT_DEPLOYMENT_DNS_NAME>"
     const projectsDomain = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
     return project.backend_custom_domain || `backend.${project.project_uuid}.${projectsDomain}`;
@@ -1045,19 +1045,18 @@ router.post('/:projectId/admin/evictOutpoint', requireRegisteredUser, requirePro
     if (!adminBearerToken) {
         return res.status(400).json({ error: 'No admin bearer token stored for this project' });
     }
-    if (!req.body.service || !req.body.txid || typeof req.body.outputIndex !== 'number' || !req.body.topic) {
-        return res.status(400).json({ error: 'No service, txid, outputIndex, or topic' })
+    if (!req.body.txid || typeof req.body.outputIndex !== 'number') {
+        return res.status(400).json({ error: 'No txid or outputIndex provided' })
     }
 
     const backendDomain = getBackendDomain(project);
-    const url = `https://${backendDomain}/admin/syncAdvertisements`;
+    const url = `https://${backendDomain}/admin/evictOutpoint`;
 
     try {
         const response = await axios.post(url, {
             service: req.body.service,
             txid: req.body.txid,
-            outputIndex: req.body.outputIndex,
-            topic: req.body.topic
+            outputIndex: req.body.outputIndex
         }, {
             headers: {
                 Authorization: `Bearer ${adminBearerToken}`

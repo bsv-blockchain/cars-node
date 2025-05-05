@@ -1,5 +1,7 @@
 import { Transaction, PushDrop, Utils, ProtoWallet } from '@bsv/sdk'
 import logger from '../logger'
+import axios from 'axios'
+import { getBackendDomain } from './projects'
 
 interface Takedown {
     outpoint: string,
@@ -16,7 +18,7 @@ interface Takedown {
 interface RecognizedAuthority {
     name: string,
     authorityRequiredSignatures: number,
-    officerPublicKeys: string[]
+    officerIdentityKeys: string[]
 }
 
 /**
@@ -35,16 +37,14 @@ export default async (req, res) => {
         const takedown: Takedown = JSON.parse(Utils.toUTF8(json))
         const actionable = recognizedAuthorities.some(x => x.name === takedown.authority && x.authorityRequiredSignatures === takedown.authorityRequiredSignatures)
         if (!actionable) {
-            return res.status(400).json({
-                error: `This system does not recognize authority ${takedown.authority} with ${takedown.authorityRequiredSignatures} required ${takedown.authorityRequiredSignatures === 1 ? 'signature' : 'signatures'}. Not actioned.`
-            })
+            return res.status(400).json({ error: `Not actioned.` })
         }
         const anyoneWallet = new ProtoWallet('anyone')
-        const messageForVerification = Utils.toArray(`${takedown.authority}\n${takedown.outpoint}\n${takedown.humanReadableMessage}`, 'utf8')
+        const messageForVerification = Utils.toArray(`${takedown.authority}\n${takedown.outpoint}\n${takedown.takedownNumber}\n${takedown.humanReadableMessage}`, 'utf8')
         let gatheredSignatures = 0
         for (let i = 0; i < takedown.signatures.length; i++) {
             try {
-                const { valid } = anyoneWallet.verifySignature({
+                const { valid } = await anyoneWallet.verifySignature({
                     protocolID: [2, 'takedown'],
                     keyID: takedown.takedownNumber,
                     data: messageForVerification,
@@ -61,17 +61,32 @@ export default async (req, res) => {
             }
         }
         if (gatheredSignatures < takedown.authorityRequiredSignatures) {
-            return res.status(400).json({
-                error: `Authority ${takedown.authority} has ${takedown.authorityRequiredSignatures} requires ${takedown.authorityRequiredSignatures === 1 ? 'signature' : 'signatures'}, but only ${gatheredSignatures} valid ${gatheredSignatures === 1 ? 'signature is' : 'signatures are'} present. Not actioned.`
-            })
+            return res.status(400).json({ error: `Not actioned.` })
         }
+        const [txid, outputIndexString] = takedown.outpoint.split('.')
+        const outputIndex = parseInt(outputIndexString)
 
-        // Now, we know we can action the takedown request.
-        // For every project, for every service, for every topic, delete the outpoint.
-        // TODO: Implement this. But there are three nested for loops, we should find a better way.
-        // The goal is to remove this outpoint EVERYWHERE it may appear in our system, without making it complex for regulators.
-        // We don't want regulators to have to specify specific topic or lookup service names, just point to an outpoint and purge it fully.
-        // Within CARS, we just have to find the best and smartest way to do that.
+        // get all projects
+        const projects = await req.db('projects').select('*')
+        for (const project of projects) {
+            const backendDomain = getBackendDomain(project);
+            const url = `https://${backendDomain}/admin/evictOutpoint`;
+            try {
+                const response = await axios.post(url, {
+                    txid,
+                    outputIndex
+                }, {
+                    headers: {
+                        Authorization: `Bearer ${project.admin_bearer_token}`
+                    },
+                    timeout: 120000
+                });
+                console.log(response.data)
+            } finally {
+                continue
+            }
+        }
+        res.status(200).json({ message: 'Actioned.' })
     } catch (e) {
         logger.error('Error with takedown request', e)
         res.status(400).json({ error: 'Error with takedown request, not actioned.' })
