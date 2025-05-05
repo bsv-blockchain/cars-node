@@ -7,6 +7,7 @@ import bodyParser from 'body-parser';
 import routes from './routes';
 import upload from './routes/upload';
 import publicRoute from './routes/public';
+import globalEviction from './routes/globalEviction';
 import { initCluster } from './init-cluster';
 import { startCronJobs } from './cron';
 import timeout from 'connect-timeout';
@@ -69,6 +70,9 @@ async function main() {
 
     // Public queries are also not authenticated
     app.get('/api/v1/public', publicRoute)
+
+    // Global outpoint eviction endpoint also not authenticated
+    app.post('/api/v1/evict-globally', globalEviction)
 
     // Logging middleware
     app.use((req, res, next) => {
