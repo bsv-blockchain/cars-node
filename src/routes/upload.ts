@@ -450,6 +450,7 @@ metadata:
   name: {{ include "cars-project.fullname" . }}-ingress
   labels:
     app: {{ include "cars-project.fullname" . }}
+    created-by: cars
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-production"
 spec:

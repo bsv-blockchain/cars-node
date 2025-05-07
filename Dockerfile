@@ -24,4 +24,4 @@ RUN chmod +x /wait-for-services.sh
 
 EXPOSE 7777
 
-CMD ["/wait-for-services.sh", "cars-mysql", "3306", "cars-k3s", "6443", "npm", "run", "start:dev"]
+CMD ["npm", "run", "start:prod"]

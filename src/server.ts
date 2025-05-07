@@ -16,6 +16,8 @@ import { makeWallet } from './utils/wallet';
 const port = parseInt(process.env.CARS_NODE_PORT || '7777', 10);
 const MAINNET_PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY;
 const TESTNET_PRIVATE_KEY = process.env.TESTNET_PRIVATE_KEY;
+const INIT_K3S = process.env.INIT_K3S;
+
 if (!MAINNET_PRIVATE_KEY || !TESTNET_PRIVATE_KEY) {
     throw new Error('Missing CARS node testnet or mainnet private keys on startup.');
 }
@@ -37,7 +39,9 @@ async function main() {
     const mainnetWallet = await makeWallet('main', MAINNET_PRIVATE_KEY!)
     const testnetWallet = await makeWallet('test', TESTNET_PRIVATE_KEY!)
 
-    await initCluster();
+    if (INIT_K3S) {
+        await initCluster();
+    }
     startCronJobs(db, mainnetWallet, testnetWallet);
 
     const app = express();
