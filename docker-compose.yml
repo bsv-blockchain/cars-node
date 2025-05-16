@@ -51,6 +51,15 @@ services:
       nofile:
         soft: 1048576
         hard: 1048576
+    command:
+      - "/wait-for-services.sh"
+      - "cars-mysql"
+      - "3306"
+      - "cars-k3s"
+      - "6443"
+      - "npm"
+      - "run"
+      - "start:dev"
 
   k3s-server:
     image: rancher/k3s:latest
