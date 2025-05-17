@@ -77,6 +77,7 @@ services:
       - server
       - "--tls-san=cars-k3s"
       - "--node-name=cars-k3s"
+      - "--kubelet-arg=config=/etc/rancher/k3s/kubelet-config.yaml"
     restart: always
     environment:
       K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
@@ -86,6 +87,7 @@ services:
       - k3s-server:/var/lib/rancher/k3s
       - ./local-data/kubeconfig:/output
       - ./registries.yaml:/etc/rancher/k3s/registries.yaml:ro
+      - ./kubelet-config.yaml:/etc/rancher/k3s/kubelet-config.yaml
     ports:
       - "6080:80"
       - "6443:443"
