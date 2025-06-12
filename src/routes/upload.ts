@@ -434,7 +434,6 @@ spec:
       tlsHosts += `      - {{ .Values.ingressHostFrontend }}\n`;
       if (valuesObj.ingressCustomFrontend) {
         tlsHosts += `      - {{ .Values.ingressCustomFrontend }}\n`;
-        tlsHosts += `      - www.{{ .Values.ingressCustomFrontend }}\n`;
       }
     }
     if (backendEnabled) {
@@ -443,6 +442,37 @@ spec:
         tlsHosts += `      - {{ .Values.ingressCustomBackend }}\n`;
       }
     }
+
+    // Define www ingress as separate object to ensure certs don't get clobbered
+    // If user doesn't have a custom domain this object won't get used later
+    let wwwIngressYaml = `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "cars-project.fullname" . }}-ingress
+  labels:
+    app: {{ include "cars-project.fullname" . }}
+    created-by: cars
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-production"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+      - www.{{ .Values.ingressCustomBackend }}
+    secretName: project-${project.project_uuid}-tls
+  rules:
+  - host: {{ .Values.ingressHostFrontend }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "cars-project.fullname" . }}-service
+            port:
+              number: 80
+`;
+
 
     let ingressYaml = `apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -532,6 +562,14 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
       path.join(helmDir, 'templates', 'ingress.yaml'),
       ingressYaml
     );
+
+    if (valuesObj.ingressCustomFrontend) {
+      fs.writeFileSync(
+        path.join(helmDir, 'templates', 'www-ingress.yaml'),
+	wwwIngressYaml
+      );
+    }
+
 
     //
     // 14d) MySQL: a StatefulSet + Service + PVC (only if useMySQL)
