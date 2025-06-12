@@ -143,7 +143,7 @@ export default async (req: Request, res: Response) => {
     }
 
     // 11) Build/push Docker images
-    const registryHost = 'cars-registry:5000';
+    const registryHost = process.env.DOCKER_HOST || 'cars-registry:5000';
     let backendImage: string | null = null;
     let frontendImage: string | null = null;
 
