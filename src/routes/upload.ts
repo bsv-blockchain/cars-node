@@ -458,8 +458,8 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-      - www.{{ .Values.ingressCustomBackend }}
-    secretName: project-${project.project_uuid}-tls
+      - www.{{ .Values.ingressCustomFrontend }}
+      secretName: project-${project.project_uuid}-tls
   rules:
   - host: {{ .Values.ingressHostFrontend }}
     http:
