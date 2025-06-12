@@ -606,7 +606,7 @@ spec:
               value: "projectUser"
             - name: MYSQL_PASSWORD
               value: "projectPass"
-	    - name: MYSQL_EXTRA_FLAGS
+            - name: MYSQL_EXTRA_FLAGS
               value: "--innodb_use_native_aio=0"
           ports:
             - containerPort: 3306
