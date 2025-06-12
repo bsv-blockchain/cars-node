@@ -448,7 +448,7 @@ spec:
     let wwwIngressYaml = `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "cars-project.fullname" . }}-ingress
+  name: {{ include "cars-project.fullname" . }}-www
   labels:
     app: {{ include "cars-project.fullname" . }}
     created-by: cars
@@ -461,7 +461,7 @@ spec:
       - www.{{ .Values.ingressCustomFrontend }}
       secretName: project-${project.project_uuid}-tls
   rules:
-  - host: {{ .Values.ingressHostFrontend }}
+  - host: www.{{ .Values.ingressHostFrontend }}
     http:
       paths:
       - path: /
