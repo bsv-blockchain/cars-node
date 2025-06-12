@@ -459,7 +459,7 @@ spec:
   tls:
     - hosts:
       - www.{{ .Values.ingressCustomFrontend }}
-      secretName: project-${project.project_uuid}-tls
+      secretName: project-${project.project_uuid}-www-tls
   rules:
   - host: www.{{ .Values.ingressHostFrontend }}
     http:
@@ -606,6 +606,8 @@ spec:
               value: "projectUser"
             - name: MYSQL_PASSWORD
               value: "projectPass"
+	    - name: MYSQL_EXTRA_FLAGS
+              value: "--innodb_use_native_aio=0"
           ports:
             - containerPort: 3306
           volumeMounts:
