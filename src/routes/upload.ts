@@ -181,9 +181,9 @@ EXPOSE 80`
       );
 
       // Build + push
-      runCmd(`docker build -t ${frontendImage} .`, { cwd: frontendDir });
+      runCmd(`buildah build --isolation=chroot -t ${frontendImage} .`, { cwd: frontendDir });
       await logStep(`Frontend image built: ${frontendImage}`);
-      runCmd(`docker push ${frontendImage}`, { cwd: frontendDir });
+      runCmd(`buildah push ${frontendImage}`, { cwd: frontendDir });
       await logStep(`Frontend image pushed: ${frontendImage}`);
     }
 
@@ -237,9 +237,9 @@ EXPOSE 80`
       fs.writeFileSync(path.join(backendDir, 'index.ts'), generateIndexTs(deploymentInfo));
 
       // Build + push
-      runCmd(`docker build -t ${backendImage} ${backendDir}`);
+      runCmd(`buildah build --isolation=chroot -t ${backendImage} ${backendDir}`);
       await logStep(`Backend image built: ${backendImage}`);
-      runCmd(`docker push ${backendImage}`);
+      runCmd(`buildah push ${backendImage}`);
       await logStep(`Backend image pushed: ${backendImage}`);
     }
 
