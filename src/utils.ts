@@ -163,7 +163,7 @@ export function generatePackageJson(backendDependencies: Record<string, string>)
  * with optional contract artifacts if "enableContracts" is true.
  */
 export function generateDockerfile(enableContracts: boolean) {
-  let file = `FROM node:22-alpine
+  let file = `FROM docker.io/node:22-alpine
 WORKDIR /app
 COPY ./package.json .
 RUN npm i

@@ -1,14 +1,21 @@
-FROM node:22-alpine
+FROM quay.io/buildah/stable:latest
+
+# Install Node.js and npm from NodeSource
+RUN dnf update -y && \
+    dnf install -y curl bash openssl shadow-utils && \
+    curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - && \
+    dnf install -y nodejs && \
+    dnf clean all
 
 WORKDIR /app
 
 # Install kubectl
-RUN apk add --no-cache curl bash openssl buildah shadow 0docker-cli
 RUN curl -LO "https://dl.k8s.io/release/v1.25.0/bin/linux/amd64/kubectl" && \
-    chmod +x kubectl && mv kubectl /usr/local/bin/kubectl
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/kubectl
 
 # Install helm
-RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | VERIFY_CHECKSUM=false bash
 
 # Copy only package files to install dependencies
 COPY package.json ./
