@@ -385,18 +385,52 @@ spec:
             ${syncConfigJson}
         ports:
         - containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m  
       {{- end }}
       {{- if .Values.frontendImage }}
       - name: frontend
         image: {{ .Values.frontendImage }}
         ports:
         - containerPort: 80
+        resources:
+          requests:
+            cpu: 100m  
       {{- end }}
 `
     );
 
     //
-    // 14b) Service for our combined Pod
+    // 14b) HorizontalPodAutoscaler for our app (frontend + backend)
+    //
+    fs.writeFileSync(
+      path.join(helmDir, 'templates', 'hpa.yaml'),
+      `apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "cars-project.fullname" . }}-deployment
+  labels:
+    app: {{ include "cars-project.fullname" . }}
+spec:
+  maxReplicas: 10
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 50
+        type: Utilization
+    type: Resource
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "cars-project.fullname" . }}-deployment
+`
+    );
+
+    //
+    // 14c) Service for our combined Pod
     //
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'service.yaml'),
@@ -427,7 +461,7 @@ spec:
     );
 
     //
-    // 14c) Ingress for both frontend and backend
+    // 14d) Ingress for both frontend and backend
     //
     let tlsHosts = '';
     if (frontendEnabled) {
@@ -572,7 +606,7 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
 
 
     //
-    // 14d) MySQL: a StatefulSet + Service + PVC (only if useMySQL)
+    // 14e) MySQL: a StatefulSet + Service + PVC (only if useMySQL)
     //
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'mysql-statefulset.yaml'),
@@ -658,7 +692,7 @@ spec:
     );
 
     //
-    // 14e) MongoDB: a StatefulSet + Service + PVC (only if useMongo)
+    // 14f) MongoDB: a StatefulSet + Service + PVC (only if useMongo)
     //
     fs.writeFileSync(
       path.join(helmDir, 'templates', 'mongo-statefulset.yaml'),
