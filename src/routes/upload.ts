@@ -237,9 +237,9 @@ EXPOSE 80`
       fs.writeFileSync(path.join(backendDir, 'index.ts'), generateIndexTs(deploymentInfo));
 
       // Build + push
-      runCmd(`buildah build --root /tmp/buildah-root --runroot /tmp/buildah-run --isolation=chroot  -t ${backendImage} ${backendDir}`);
+      runCmd(`buildah build --storage-driver=vfs --isolation=chroot  -t ${backendImage} ${backendDir}`);
       await logStep(`Backend image built: ${backendImage}`);
-      runCmd(`buildah push ${backendImage}`);
+      runCmd(`buildah push --tls-verify=false --storage-driver=vfs ${backendImage}`);
       await logStep(`Backend image pushed: ${backendImage}`);
     }
 
