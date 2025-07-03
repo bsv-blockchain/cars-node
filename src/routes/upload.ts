@@ -174,16 +174,16 @@ export default async (req: Request, res: Response) => {
       // Dockerfile for serving static files
       fs.writeFileSync(
         path.join(frontendDir, 'Dockerfile'),
-        `FROM nginx:alpine
+        `FROM docker.io/nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY . /usr/share/nginx/html
 EXPOSE 80`
       );
 
       // Build + push
-      runCmd(`docker build -t ${frontendImage} .`, { cwd: frontendDir });
+      runCmd(`buildah build --storage-driver=vfs  --isolation=chroot -t ${frontendImage} .`, { cwd: frontendDir });
       await logStep(`Frontend image built: ${frontendImage}`);
-      runCmd(`docker push ${frontendImage}`, { cwd: frontendDir });
+      runCmd(`buildah push --storage-driver=vfs --tls-verify=false ${frontendImage}`, { cwd: frontendDir });
       await logStep(`Frontend image pushed: ${frontendImage}`);
     }
 
@@ -237,9 +237,9 @@ EXPOSE 80`
       fs.writeFileSync(path.join(backendDir, 'index.ts'), generateIndexTs(deploymentInfo));
 
       // Build + push
-      runCmd(`docker build -t ${backendImage} ${backendDir}`);
+      runCmd(`buildah build --storage-driver=vfs --isolation=chroot  -t ${backendImage} ${backendDir}`);
       await logStep(`Backend image built: ${backendImage}`);
-      runCmd(`docker push ${backendImage}`);
+      runCmd(`buildah push --tls-verify=false --storage-driver=vfs ${backendImage}`);
       await logStep(`Backend image pushed: ${backendImage}`);
     }
 
