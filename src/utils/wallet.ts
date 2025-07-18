@@ -1,11 +1,11 @@
-import { WalletInterface, PrivateKey, P2PKH, PublicKey, KeyDeriver, InternalizeActionArgs } from '@bsv/sdk';
+import { WalletInterface, PrivateKey, P2PKH, PublicKey, InternalizeActionArgs, CachedKeyDeriver } from '@bsv/sdk';
 import type { Knex } from 'knex';
 import logger from '../logger';
 import crypto from 'crypto';
 import { Services, StorageClient, Wallet, WalletSigner, WalletStorageManager } from '@bsv/wallet-toolbox-client';
 
 export async function makeWallet(chain: 'test' | 'main', privateKey: string): Promise<WalletInterface> {
-    const keyDeriver = new KeyDeriver(new PrivateKey(privateKey, 'hex'));
+    const keyDeriver = new CachedKeyDeriver(new PrivateKey(privateKey, 'hex'));
     const storageManager = new WalletStorageManager(keyDeriver.identityKey);
     const signer = new WalletSigner(chain, keyDeriver, storageManager);
     const services = new Services(chain);

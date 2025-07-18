@@ -8,10 +8,10 @@
         "setup": "tsx setup.ts"
     },
     "dependencies": {
-        "@bsv/auth-express-middleware": "^1.2.0",
-        "@bsv/payment-express-middleware": "^1.2.1",
-        "@bsv/sdk": "^1.6.10",
-        "@bsv/wallet-toolbox-client": "^1.5.6",
+        "@bsv/auth-express-middleware": "^1.2.1",
+        "@bsv/payment-express-middleware": "^1.2.2",
+        "@bsv/sdk": "^1.6.16",
+        "@bsv/wallet-toolbox-client": "^1.5.12",
         "@sendgrid/mail": "^8.1.4",
         "@types/express": "^4.17.17",
         "axios": "^1.7.9",
