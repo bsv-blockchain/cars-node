@@ -727,6 +727,9 @@ spec:
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
+       securityContext:
+         fsGroup: 999
+         fsGroupChangePolicy: "OnRootMismatch"
   volumeClaimTemplates:
     - metadata:
         name: mongo-data
