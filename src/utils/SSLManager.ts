@@ -14,28 +14,15 @@ export async function checkAndIssueCertificates() {
                 }
             }
 
-            let needsAnnotation = true;
-            for (const host of hosts) {
-                const isReachable = await checkHostReachability(host);
-                if (!isReachable) {
-                    needsAnnotation = false;
-                    break;
-                }
-            }
-
             const ingressName = ing.metadata.name;
             const ingressNamespace = ing.metadata.namespace;
 
             const hasAnnotation = ing.metadata.annotations && ing.metadata.annotations["cert-manager.io/cluster-issuer"] === "letsencrypt-production";
 
-            if (needsAnnotation && !hasAnnotation) {
+            if (!hasAnnotation) {
                 // Patch ingress to add annotation
                 console.log(`Adding cert-manager annotation to ${ingressNamespace}/${ingressName}`);
                 execSync(`kubectl annotate ingress ${ingressName} -n ${ingressNamespace} cert-manager.io/cluster-issuer=letsencrypt-production --overwrite`);
-            } else if (!needsAnnotation && hasAnnotation) {
-                // Remove annotation
-                console.log(`Removing cert-manager annotation from ${ingressNamespace}/${ingressName}`);
-                execSync(`kubectl annotate ingress ${ingressName} -n ${ingressNamespace} cert-manager.io/cluster-issuer- --overwrite`);
             }
         }
     } catch (err) {
