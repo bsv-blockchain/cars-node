@@ -647,6 +647,9 @@ spec:
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: "OnRootMismatch"
   volumeClaimTemplates:
     - metadata:
         name: mysql-data
@@ -727,6 +730,9 @@ spec:
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: "OnRootMismatch"
   volumeClaimTemplates:
     - metadata:
         name: mongo-data
