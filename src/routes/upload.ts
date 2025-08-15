@@ -267,6 +267,7 @@ EXPOSE 80`
     const logPrefixEnv = typeof engineConfigObj.logPrefix === 'string' ? engineConfigObj.logPrefix : '[CARS OVERLAY ENGINE] ';
     const throwOnBroadcastFailEnv = engineConfigObj.throwOnBroadcastFailure === true ? 'true' : 'false';
     const adminBearerTokenEnv = project.admin_bearer_token || '';
+    const suppressDefaultSyncAdvertisements = engineConfigObj.suppressDefaultSyncAdvertisements === true ? 'true' : 'false';
 
     // 13) Fund project key if it’s too low
     const projectServerPrivateKey = project.private_key;
@@ -378,6 +379,8 @@ spec:
           value: "${logTimeEnv}"
         - name: LOG_PREFIX
           value: "${logPrefixEnv}"
+        - name: SUPPRESS_DEFAULT_SYNC_ADVERTISEMENTS
+          value: "${suppressDefaultSyncAdvertisements}"
         - name: THROW_ON_BROADCAST_FAIL
           value: "${throwOnBroadcastFailEnv}"
         - name: SYNC_CONFIG_JSON
@@ -600,7 +603,7 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
     if (valuesObj.ingressCustomFrontend) {
       fs.writeFileSync(
         path.join(helmDir, 'templates', 'www-ingress.yaml'),
-	wwwIngressYaml
+        wwwIngressYaml
       );
     }
 
