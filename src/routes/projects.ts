@@ -135,7 +135,8 @@ router.post('/create', requireRegisteredUser, async (req: Request, res: Response
         syncConfiguration: {},
         logTime: false,
         logPrefix: '[CARS OVERLAY ENGINE] ',
-        throwOnBroadcastFailure: false
+        throwOnBroadcastFailure: false,
+        suppressDefaultSyncAdvertisements: true
     };
 
     const [projId] = await db('projects').insert({

@@ -72,7 +72,7 @@ const main = async () => {
   const logTime = process.env.LOG_TIME === 'true';
   const logPrefix = process.env.LOG_PREFIX || '[CARS ENGINE] ';
   const throwOnBroadcastFailure = process.env.THROW_ON_BROADCAST_FAIL === 'true';
-  const suppressDefaultSyncAdvertisements = process.env.SUPPRESS_DEFAULT_SYNC_ADS !== 'false'; // defaults to true
+  const suppressDefaultSyncAdvertisements = process.env.SUPPRESS_DEFAULT_SYNC_ADVERTISEMENTS !== 'false'; // defaults to true
   let parsedSyncConfig = {};
   if (process.env.SYNC_CONFIG_JSON) {
     try {
