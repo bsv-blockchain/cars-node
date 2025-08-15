@@ -926,7 +926,8 @@ router.post('/:projectId/domains/backend', requireRegisteredUser, requireProject
  *   syncConfiguration?: Record<string, false | string[] | 'SHIP'>,
  *   logTime?: boolean,
  *   logPrefix?: string,
- *   throwOnBroadcastFailure?: boolean
+ *   throwOnBroadcastFailure?: boolean,
+ *   suppressDefaultSyncAdvertisements?: boolean
  * }
  */
 router.post('/:projectId/settings/update', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
@@ -939,7 +940,8 @@ router.post('/:projectId/settings/update', requireRegisteredUser, requireProject
         syncConfiguration,
         logTime,
         logPrefix,
-        throwOnBroadcastFailure
+        throwOnBroadcastFailure,
+        suppressDefaultSyncAdvertisements
     } = req.body;
 
     // Load existing engine_config
@@ -968,6 +970,9 @@ router.post('/:projectId/settings/update', requireRegisteredUser, requireProject
     }
     if (typeof throwOnBroadcastFailure === 'boolean') {
         engineConfig.throwOnBroadcastFailure = throwOnBroadcastFailure;
+    }
+    if (typeof suppressDefaultSyncAdvertisements === 'boolean') {
+        engineConfig.suppressDefaultSyncAdvertisements = suppressDefaultSyncAdvertisements;
     }
 
     // Save back to DB
