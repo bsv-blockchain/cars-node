@@ -10,8 +10,8 @@
     "dependencies": {
         "@bsv/auth-express-middleware": "^1.2.3",
         "@bsv/payment-express-middleware": "^1.2.3",
-        "@bsv/sdk": "^1.6.20",
-        "@bsv/wallet-toolbox-client": "^1.5.19",
+        "@bsv/sdk": "^1.8.3",
+        "@bsv/wallet-toolbox-client": "^1.6.27",
         "@sendgrid/mail": "^8.1.4",
         "@types/express": "^4.17.17",
         "axios": "^1.7.9",
