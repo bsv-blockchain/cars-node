@@ -444,7 +444,7 @@ metadata:
   labels:
     app: {{ include "cars-project.fullname" . }}
 spec:
-  type: ClusterIP
+  clusterIP: None
   selector:
     app: {{ include "cars-project.fullname" . }}
   ports:
@@ -686,6 +686,7 @@ metadata:
   labels:
     app: mysql
 spec:
+  clusterIP: None
   selector:
     app: mysql
   ports:
@@ -769,6 +770,7 @@ metadata:
   labels:
     app: mongo
 spec:
+  clusterIP: None
   selector:
     app: mongo
   ports:
