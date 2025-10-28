@@ -444,7 +444,7 @@ metadata:
   labels:
     app: {{ include "cars-project.fullname" . }}
 spec:
-  type: ClusterIP
+  clusterIP: None
   selector:
     app: {{ include "cars-project.fullname" . }}
   ports:
