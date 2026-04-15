@@ -220,10 +220,10 @@ export function generateWaitScript() {
 
 set -e
 
-host1="$1"
-port1="$2"
-host2="$3"
-port2="$4"
+host1="\${MYSQL_WAIT_HOST:-\${1:-mysql}}"
+port1="\${MYSQL_WAIT_PORT:-\${2:-3306}}"
+host2="\${MONGO_WAIT_HOST:-\${3:-mongo}}"
+port2="\${MONGO_WAIT_PORT:-\${4:-27017}}"
 shift 4
 
 echo "Waiting for $host1:$port1..."

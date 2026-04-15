@@ -88,6 +88,15 @@ export default async (req: Request, res: Response) => {
     await db('deploys').where({ id: deploy.id }).update({ file_path: filePath });
     await logStep(`File uploaded successfully, saved to ${filePath}`);
 
+    // Acknowledge the upload before the long-running build/push/helm workflow.
+    // The deployment can then continue in the background without relying on a
+    // single long-lived client socket surviving the full install.
+    res.status(202).json({
+      message: 'Upload accepted, deployment processing started',
+      deploymentId,
+      projectId: project.project_uuid,
+    });
+
     // 6) Create a working directory for extraction
     const uploadDir = path.join('/tmp', `build_${deploymentId}`);
     fs.ensureDirSync(uploadDir);
@@ -460,11 +469,19 @@ spec:
             secretKeyRef:
               name: {{ include "cars-project.fullname" . }}-db-connection
               key: KNEX_URL
+        - name: MYSQL_WAIT_HOST
+          value: "{{ .Values.mysqlServiceName }}"
+        - name: MYSQL_WAIT_PORT
+          value: "3306"
         - name: MONGO_URL
           valueFrom:
             secretKeyRef:
               name: {{ include "cars-project.fullname" . }}-db-connection
               key: MONGO_URL
+        - name: MONGO_WAIT_HOST
+          value: "mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local"
+        - name: MONGO_WAIT_PORT
+          value: "27017"
         - name: WEB_UI_CONFIG
           value: |-
             ${JSON.stringify(webUiConfigObj)}
@@ -1172,21 +1189,46 @@ spec:
               until mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 })'; do
                 sleep 10
               done
-              mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin <<'JS'
-              try {
-                rs.status()
-              } catch (e) {
-                rs.initiate({
-                  _id: "{{ .Values.mongoReplicaSetName }}",
-                  members: [
-                    { _id: 0, host: "mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017", priority: 2 },
-                    { _id: 1, host: "mongo-rs-1.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017", priority: 1 },
-                    { _id: 2, host: "mongo-arbiter.{{ .Release.Namespace }}.svc.cluster.local:27017", arbiterOnly: true }
-                  ]
-                })
+              until mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --quiet <<'JS'
+              const desiredConfig = {
+                _id: "{{ .Values.mongoReplicaSetName }}",
+                members: [
+                  { _id: 0, host: "mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017", priority: 2 },
+                  { _id: 1, host: "mongo-rs-1.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017", priority: 1 },
+                  { _id: 2, host: "mongo-arbiter.{{ .Release.Namespace }}.svc.cluster.local:27017", arbiterOnly: true }
+                ]
+              };
+              function hasPrimary(status) {
+                return Array.isArray(status.members) && status.members.some((member) => member.stateStr === "PRIMARY");
               }
-              rs.status()
+              try {
+                const status = rs.status();
+                if (hasPrimary(status)) {
+                  quit(0);
+                }
+              } catch (statusError) {
+                try {
+                  rs.initiate(desiredConfig);
+                } catch (initError) {
+                  const msg = String(initError && (initError.errmsg || initError.message || initError));
+                  if (!msg.includes("already initialized")) {
+                    print(msg);
+                  }
+                }
+              }
+              try {
+                const status = rs.status();
+                if (hasPrimary(status)) {
+                  quit(0);
+                }
+                printjson(status);
+              } catch (retryError) {
+                print(String(retryError && (retryError.errmsg || retryError.message || retryError)));
+              }
+              quit(1);
               JS
+                sleep 5
+              done
           env:
             - name: MONGO_ROOT_USERNAME
               valueFrom:
@@ -1226,20 +1268,16 @@ spec:
       await logStep(`Backend URL: ${valuesObj.ingressHostBackend}`);
     }
 
-    // Return success response
-    const responseObj: any = {
-      message: 'Deployment completed successfully',
-    };
-    if (frontendEnabled) responseObj.frontendUrl = valuesObj.ingressHostFrontend;
-    if (backendEnabled) responseObj.backendUrl = valuesObj.ingressHostBackend;
+    let completionMessage = 'Deployment completed successfully';
+    if (frontendEnabled) completionMessage += ` frontend=${valuesObj.ingressHostFrontend}`;
+    if (backendEnabled) completionMessage += ` backend=${valuesObj.ingressHostBackend}`;
     if (frontendEnabled && project.frontend_custom_domain) {
-      responseObj.frontendCustomDomain = project.frontend_custom_domain;
+      completionMessage += ` frontendCustom=${project.frontend_custom_domain}`;
     }
     if (backendEnabled && project.backend_custom_domain) {
-      responseObj.backendCustomDomain = project.backend_custom_domain;
+      completionMessage += ` backendCustom=${project.backend_custom_domain}`;
     }
-
-    res.json(responseObj);
+    await logStep(completionMessage);
   } catch (error: any) {
     // Handle errors gracefully, logging them and returning a 500
     if (deploy && project) {
@@ -1280,6 +1318,8 @@ CARS System`;
       }
     }
 
-    res.status(500).json({ error: `Error handling upload: ${error.message}` });
+    if (!res.headersSent) {
+      res.status(500).json({ error: `Error handling upload: ${error.message}` });
+    }
   }
 };
