@@ -8,6 +8,7 @@ import dns from 'dns/promises';
 import { sendAdminNotificationEmail, sendWelcomeEmail, sendDomainChangeEmail } from '../utils/email';
 import { enableIngress } from '../utils/ingress';
 import axios from 'axios';
+import { collectProjectHealth } from '../health';
 
 const router = Router();
 
@@ -468,60 +469,17 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
     const project = (req as any).project;
 
     try {
-        const namespace = `cars-project-${project.project_uuid}`;
+        const health = await collectProjectHealth(project.project_uuid, { includeRemoteBackendHealth: false });
         const status = {
-            online: false,
-            lastChecked: new Date(),
-            domains: { ssl: false } as { frontend?: string; backend?: string; ssl: boolean },
-            deploymentId: null as string | null
+            online: health.online,
+            lastChecked: new Date(health.checkedAt),
+            domains: {
+                frontend: health.hosts.frontend || undefined,
+                backend: health.hosts.backend || undefined,
+                ssl: Boolean(health.hosts.frontend || health.hosts.backend)
+            },
+            deploymentId: health.deploymentId
         };
-
-        try {
-            const podsOutput = execSync(`kubectl get pods -n ${namespace} -o json`);
-            const pods = JSON.parse(podsOutput.toString());
-
-            // Identify backend pod
-            const backendPod = pods.items.find((pod: any) =>
-                pod.metadata.labels?.app === `cars-project-${project.project_uuid.substr(0, 24)}`
-            );
-            if (backendPod) {
-                const backendContainer = backendPod.spec.containers.find((c: any) => c.name === 'backend');
-                if (backendContainer) {
-                    const imageTag = backendContainer.image.split(':')[1];
-                    status.deploymentId = imageTag;
-                }
-            }
-
-            // Check if all pods are running and ready
-            status.online = pods.items.length > 0 && pods.items.every((pod: any) =>
-                pod.status.phase === 'Running' &&
-                pod.status.containerStatuses?.every((container: any) => container.ready)
-            );
-
-            // Get ingress info (may fail if ingress is disabled)
-            try {
-                const ingressOutput = execSync(`kubectl get ingress -n ${namespace} -o json`);
-                const ingress = JSON.parse(ingressOutput.toString());
-
-                ingress.items.forEach((ing: any) => {
-                    if (!ing.spec.rules) return;
-                    ing.spec.rules.forEach((rule: any) => {
-                        const host = rule.host;
-                        if (host.startsWith('frontend.')) {
-                            status.domains.frontend = host;
-                        } else if (host.startsWith('backend.')) {
-                            status.domains.backend = host;
-                        }
-                    });
-                    status.domains.ssl = ing.spec.tls?.length > 0;
-                });
-            } catch (ignore) {
-                // ingress might be disabled
-            }
-
-        } catch (error: any) {
-            logger.error({ error: error.message }, 'Error checking project status');
-        }
 
         const billingInfo = {
             balance: Number(project.balance)
@@ -539,6 +497,7 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
             name: project.name,
             network: project.network,
             status,
+            health,
             billing: billingInfo,
             sslEnabled: status.domains.ssl,
             customDomains,
@@ -548,6 +507,18 @@ router.post('/:projectId/info', requireRegisteredUser, requireProject, requirePr
     } catch (error: any) {
         logger.error({ error: error.message }, 'Error getting project info');
         res.status(500).json({ error: 'Failed to get project info' });
+    }
+});
+
+router.post('/:projectId/health', requireRegisteredUser, requireProject, requireProjectAdmin, async (req: Request, res: Response) => {
+    const project = (req as any).project;
+
+    try {
+        const health = await collectProjectHealth(project.project_uuid, { includeRemoteBackendHealth: true });
+        res.status(health.status === 'error' ? 503 : 200).json(health);
+    } catch (error: any) {
+        logger.error({ error: error.message, projectId: project.project_uuid }, 'Error getting project health');
+        res.status(500).json({ error: 'Failed to get project health' });
     }
 });
 

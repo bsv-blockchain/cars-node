@@ -12,6 +12,7 @@ import { initCluster } from './init-cluster';
 import { startCronJobs } from './cron';
 import timeout from 'connect-timeout';
 import { makeWallet } from './utils/wallet';
+import { collectSystemHealth } from './health';
 
 const port = parseInt(process.env.CARS_NODE_PORT || '7777', 10);
 const MAINNET_PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY;
@@ -30,10 +31,13 @@ function haltOnTimedout(req, res, next) {
 }
 
 async function main() {
+    let migrationsComplete = false;
+
     // Run migrations
     logger.info('Running database migrations...');
     await db.migrate.latest();
     logger.info('Migrations completed.');
+    migrationsComplete = true;
 
     // We have two wallets: one on mainnet and one on testnet
     const mainnetWallet = await makeWallet('main', MAINNET_PRIVATE_KEY!)
@@ -67,6 +71,33 @@ async function main() {
         (req as any).mainnetWallet = mainnetWallet;
         (req as any).testnetWallet = testnetWallet;
         next();
+    });
+
+    app.get('/health/live', async (_req, res) => {
+        const report = await collectSystemHealth(db, {
+            mainnetWalletReady: true,
+            testnetWalletReady: true,
+            migrationsComplete
+        });
+        res.status(report.live ? 200 : 503).json(report);
+    });
+
+    app.get('/health/ready', async (_req, res) => {
+        const report = await collectSystemHealth(db, {
+            mainnetWalletReady: true,
+            testnetWalletReady: true,
+            migrationsComplete
+        });
+        res.status(report.ready ? 200 : 503).json(report);
+    });
+
+    app.get('/health', async (_req, res) => {
+        const report = await collectSystemHealth(db, {
+            mainnetWalletReady: true,
+            testnetWalletReady: true,
+            migrationsComplete
+        });
+        res.status(report.ready ? 200 : 503).json(report);
     });
 
     // Upload uses signed URLs, so is excluded from Authrite. Also, they are not logged for performance reasons (they are large).

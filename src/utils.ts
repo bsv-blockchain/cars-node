@@ -28,6 +28,8 @@ export interface CARSConfig {
  * respects the new features (adminBearerToken, sync config, etc.).
  */
 export function generateIndexTs(info: CARSConfigInfo): string {
+  const topicManagerNames = JSON.stringify(Object.keys(info.topicManagers || {}));
+  const lookupServiceNames = JSON.stringify(Object.keys(info.lookupServices || {}));
   let imports = `
 import OverlayExpress from '@bsv/overlay-express'
 `;
@@ -118,6 +120,16 @@ const main = async () => {
 
   // Conclude
   mainFunction += `
+  server.configureHealth({
+    contextProvider: async () => ({
+      serviceType: 'cars-project-backend',
+      hostingUrl: process.env.HOSTING_URL,
+      network: process.env.NETWORK,
+      gaspSyncEnabled: process.env.GASP_SYNC === 'true',
+      topicManagers: ${topicManagerNames},
+      lookupServices: ${lookupServiceNames}
+    })
+  });
   await server.configureEngine();
   await server.start();
 };
@@ -147,7 +159,7 @@ export function generatePackageJson(backendDependencies: Record<string, string>)
     "license": "ISC",
     "dependencies": {
       ...backendDependencies,
-      "@bsv/overlay-express": "^2.0.2",
+      "@bsv/overlay-express": "^2.2.0",
       "mysql2": "^3.11.5",
       "tsx": "^4.19.2",
       "chalk": "^5.3.0"

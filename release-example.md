@@ -101,6 +101,15 @@ k -n "$NS" set image deploy/"$DEPLOY" "$CONTAINER"="$PULL_REF"
 
 ## Watch rollout and validate health
 
+After rollout, validate both the CARS control plane and the deployed project health:
+
+```bash
+curl -fsS https://cars.example.com/health | jq
+curl -fsS https://cars.example.com/health/ready | jq
+```
+
+For a specific project, use the authenticated `POST /api/v1/project/<projectId>/health` endpoint from an existing CARS client session to verify sticky routing, replica readiness, and backend health.
+
 ```
 k -n "$NS" rollout status deploy/"$DEPLOY" --timeout=180s
 k -n "$NS" get pods -l app=cars -o wide

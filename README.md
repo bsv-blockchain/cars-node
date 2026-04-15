@@ -58,6 +58,7 @@ In short, CARS Node takes your `deployment-info.json` and packaged artifacts and
 - **Multiple Environment Support:** Supports mainnet and testnet keys, separate private keys, and network-specific TAAL API keys for transaction broadcast, merkle proof acquisition, and double spend detection.
 - **Identity and Project Management:** Integrates with the standard BSV identity system, ensuring only authorized admins can create or manage projects.
 - **Logging and Observability:** Centralized logs in MySQL, plus direct access to cluster-level logs (frontend/backend/mongo/mysql) via `kubectl` and API endpoints.
+- **Health and Readiness Visibility:** Public system health endpoints plus project-aware health reports that inspect Kubernetes readiness, sticky routing, database topology, and backend HTTP health.
 - **Extensible Setup:** Designed for both small-scale Docker Compose-based setups and large-scale, production-grade environments.
 
 ---
@@ -201,6 +202,7 @@ Set rates for CPU, memory, disk, network usage in `.env`. CARS Node reads these 
 
 - **Prometheus Setup:** CARS Node expects a working Prometheus endpoint.  
 - **Logs and Metrics:** You can add additional dashboards or integrate with Grafana for advanced observability.
+- **Health Endpoints:** CARS Node exposes `GET /health/live`, `GET /health/ready`, and `GET /health` for system health. Project admins can also call `POST /api/v1/project/:projectId/health` for namespace-aware checks covering app replicas, sticky routing, MySQL, MongoDB, and backend HTTP readiness.
 
 ### Automation and CI/CD Integration
 

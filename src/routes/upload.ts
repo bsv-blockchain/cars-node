@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import fs from 'fs-extra';
 import path from 'path';
-import { Utils, Wallet } from '@bsv/sdk';
+import { Utils, type WalletInterface } from '@bsv/sdk';
 import type { Knex } from 'knex';
 import { execSync } from 'child_process';
 import logger from '../logger';
@@ -20,7 +20,7 @@ import { sendDeploymentFailureEmail } from '../utils/email';
 const projectsDomain: string = process.env.PROJECT_DEPLOYMENT_DNS_NAME!;
 
 export default async (req: Request, res: Response) => {
-  const { db, mainnetWallet: wallet, testnetWallet }: { db: Knex, mainnetWallet: Wallet, testnetWallet: Wallet } = req as any;
+  const { db, mainnetWallet: wallet, testnetWallet }: { db: Knex, mainnetWallet: WalletInterface, testnetWallet: WalletInterface } = req as any;
   const { deploymentId, signature } = req.params;
 
   // Helper function to log steps to DB logs and logger
@@ -483,6 +483,26 @@ spec:
             ${syncConfigJson}
         ports:
         - containerPort: 8080
+        startupProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          failureThreshold: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 5
         resources:
           requests:
             cpu: 100m  
@@ -492,6 +512,18 @@ spec:
         image: {{ .Values.frontendImage }}
         ports:
         - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
         resources:
           requests:
             cpu: 100m  
