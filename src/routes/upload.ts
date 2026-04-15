@@ -309,6 +309,15 @@ description: A chart to deploy a CARS project
       ingressCustomBackend: project.backend_custom_domain,
       useMySQL,
       useMongo,
+      appReplicas: 2,
+      appMinReplicas: 2,
+      appMaxReplicas: 10,
+      computeNodes: ['server2', 'server3'],
+      storageWitnessNode: 'box',
+      mysqlServiceName: 'mysql-ha',
+      mongoReplicaSetName: 'rs0',
+      mongoServiceName: 'mongo-rs',
+      storageClass: 'longhorn-replicated',
       storage: {
         mysqlSize: '20Gi',
         mongoSize: '20Gi',
@@ -328,6 +337,34 @@ description: A chart to deploy a CARS project
 `
     );
 
+    fs.writeFileSync(
+      path.join(helmDir, 'templates', 'db-secrets.yaml'),
+      `apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "cars-project.fullname" . }}-db-connection
+  labels:
+    app: {{ include "cars-project.fullname" . }}
+type: Opaque
+stringData:
+  KNEX_URL: "mysql://projectUser:projectPass@{{ .Values.mysqlServiceName }}:3306/projectdb"
+  MONGO_URL: "mongodb://root:rootpassword@mongo-rs-0.{{ .Values.mongoServiceName }}:27017,mongo-rs-1.{{ .Values.mongoServiceName }}:27017/admin?replicaSet={{ .Values.mongoReplicaSetName }}&authSource=admin&readPreference=primaryPreferred"
+  MYSQL_ROOT_PASSWORD: "rootpassword"
+  MYSQL_DATABASE: "projectdb"
+  MYSQL_USER: "projectUser"
+  MYSQL_PASSWORD: "projectPass"
+  MYSQL_MONITOR_PASSWORD: "monitor-password"
+  MYSQL_PROXYADMIN_PASSWORD: "proxyadmin-password"
+  MYSQL_XTRABACKUP_PASSWORD: "xtrabackup-password"
+  MYSQL_CLUSTERCHECK_PASSWORD: "clustercheck-password"
+  MYSQL_REPLICATION_PASSWORD: "replication-password"
+  MYSQL_OPERATOR_PASSWORD: "operator-password"
+  MONGO_ROOT_USERNAME: "root"
+  MONGO_ROOT_PASSWORD: "rootpassword"
+  MONGO_RS_KEY: "${projectServerPrivateKey}${projectServerPrivateKey}${projectServerPrivateKey}"
+`
+    );
+
     //
     // 14a) Main Deployment for our app (frontend + backend)
     //
@@ -340,7 +377,12 @@ metadata:
   labels:
     app: {{ include "cars-project.fullname" . }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.appReplicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: {{ include "cars-project.fullname" . }}
@@ -349,6 +391,53 @@ spec:
       labels:
         app: {{ include "cars-project.fullname" . }}
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      {{- range .Values.computeNodes }}
+                      - {{ . | quote }}
+                      {{- end }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: {{ include "cars-project.fullname" . }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: {{ include "cars-project.fullname" . }}
+      {{- if .Values.backendImage }}
+      initContainers:
+      - name: wait-for-mysql
+        image: busybox:1.36
+        command:
+          - /bin/sh
+          - -ec
+          - |
+            until nc -z {{ .Values.mysqlServiceName }} 3306; do
+              sleep 5
+            done
+      - name: wait-for-mongo
+        image: busybox:1.36
+        command:
+          - /bin/sh
+          - -ec
+          - |
+            until nc -z mongo-rs-0.{{ .Values.mongoServiceName }} 27017; do
+              sleep 5
+            done
+      {{- end }}
       containers:
       {{- if .Values.backendImage }}
       - name: backend
@@ -367,9 +456,15 @@ spec:
         - name: ARC_API_KEY
           value: "${project.network === 'mainnet' ? process.env.TAAL_API_KEY_MAIN : process.env.TAAL_API_KEY_TEST}"
         - name: KNEX_URL
-          value: "mysql://projectUser:projectPass@mysql:3306/projectdb"
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cars-project.fullname" . }}-db-connection
+              key: KNEX_URL
         - name: MONGO_URL
-          value: "mongodb://root:rootpassword@mongo:27017/admin"
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cars-project.fullname" . }}-db-connection
+              key: MONGO_URL
         - name: WEB_UI_CONFIG
           value: |-
             ${JSON.stringify(webUiConfigObj)}
@@ -416,7 +511,7 @@ metadata:
   labels:
     app: {{ include "cars-project.fullname" . }}
 spec:
-  maxReplicas: 10
+  maxReplicas: {{ .Values.appMaxReplicas }}
   metrics:
   - resource:
       name: cpu
@@ -424,11 +519,27 @@ spec:
         averageUtilization: 50
         type: Utilization
     type: Resource
-  minReplicas: 1
+  minReplicas: {{ .Values.appMinReplicas }}
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "cars-project.fullname" . }}-deployment
+`
+    );
+
+    fs.writeFileSync(
+      path.join(helmDir, 'templates', 'pdb.yaml'),
+      `apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "cars-project.fullname" . }}-deployment
+  labels:
+    app: {{ include "cars-project.fullname" . }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{ include "cars-project.fullname" . }}
 `
     );
 
@@ -444,7 +555,6 @@ metadata:
   labels:
     app: {{ include "cars-project.fullname" . }}
 spec:
-  clusterIP: None
   selector:
     app: {{ include "cars-project.fullname" . }}
   ports:
@@ -609,131 +719,250 @@ ${tlsHosts}      secretName: project-${project.project_uuid}-tls
 
 
     //
-    // 14e) MySQL: a StatefulSet + Service + PVC (only if useMySQL)
+    // 14e) MySQL: Percona XtraDB Cluster + HAProxy Service (only if useMySQL)
     //
     fs.writeFileSync(
-      path.join(helmDir, 'templates', 'mysql-statefulset.yaml'),
+      path.join(helmDir, 'templates', 'mysql-pxc.yaml'),
       `{{- if .Values.useMySQL }}
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secrets
+  labels:
+    app: mysql
+type: Opaque
+stringData:
+  root: "rootpassword"
+  xtrabackup: "xtrabackup-password"
+  monitor: "monitor-password"
+  proxyadmin: "proxyadmin-password"
+  clustercheck: "clustercheck-password"
+  operator: "operator-password"
+  replication: "replication-password"
+---
+apiVersion: pxc.percona.com/v1
+kind: PerconaXtraDBCluster
 metadata:
   name: mysql
   labels:
     app: mysql
 spec:
-  selector:
-    matchLabels:
-      app: mysql
-  serviceName: mysql-headless
-  replicas: 1
-  template:
-    metadata:
-      labels:
-        app: mysql
-    spec:
-      containers:
-        - name: mysql
-          image: mysql:8.0
-          env:
-            - name: MYSQL_ROOT_PASSWORD
-              value: "rootpassword"
-            - name: MYSQL_DATABASE
-              value: "projectdb"
-            - name: MYSQL_USER
-              value: "projectUser"
-            - name: MYSQL_PASSWORD
-              value: "projectPass"
-            - name: MYSQL_EXTRA_FLAGS
-              value: "--innodb_use_native_aio=0"
-          ports:
-            - containerPort: 3306
-          volumeMounts:
-            - name: mysql-data
-              mountPath: /var/lib/mysql
-      securityContext:
-        fsGroup: 999
-        fsGroupChangePolicy: "OnRootMismatch"
-  volumeClaimTemplates:
-    - metadata:
-        name: mysql-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
+  crVersion: 1.18.0
+  secretsName: mysql-secrets
+  updateStrategy: SmartUpdate
+  allowUnsafeConfigurations: false
+  pxc:
+    size: 3
+    image: percona/percona-xtradb-cluster:8.0.39-30.1
+    autoRecovery: true
+    tolerations:
+      - key: "storage.longhorn.io/node"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+    podDisruptionBudget:
+      maxUnavailable: 1
+    affinity:
+      advanced:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - "server2"
+                      - "server3"
+                      - "box"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: pxc
+                  app.kubernetes.io/instance: mysql
+    volumeSpec:
+      persistentVolumeClaim:
+        storageClassName: {{ .Values.storageClass | quote }}
+        accessModes:
+          - ReadWriteOnce
         resources:
           requests:
             storage: {{ .Values.storage.mysqlSize | quote }}
-
+  haproxy:
+    enabled: true
+    size: 2
+    podDisruptionBudget:
+      minAvailable: 1
+    affinity:
+      advanced:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - "server2"
+                      - "server3"
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: haproxy
+                    app.kubernetes.io/instance: mysql
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mysql-headless
+  name: {{ .Values.mysqlServiceName }}
   labels:
-    app: mysql
+    app: mysql-ha
 spec:
-  clusterIP: None
   selector:
-    app: mysql
+    app.kubernetes.io/component: haproxy
+    app.kubernetes.io/instance: mysql
   ports:
     - port: 3306
       targetPort: 3306
       protocol: TCP
       name: mysql
 ---
-apiVersion: v1
-kind: Service
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: mysql
+  name: mysql-bootstrap
   labels:
     app: mysql
 spec:
-  clusterIP: None
-  selector:
-    app: mysql
-  ports:
-    - port: 3306
-      targetPort: 3306
-      protocol: TCP
-      name: mysql
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: mysql-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mysql-bootstrap
+          image: mysql:8.0
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until mysql -h {{ .Values.mysqlServiceName }} -uroot -p"$MYSQL_ROOT_PASSWORD" -e 'select 1'; do
+                sleep 10
+              done
+              mysql -h {{ .Values.mysqlServiceName }} -uroot -p"$MYSQL_ROOT_PASSWORD" <<'SQL'
+              CREATE DATABASE IF NOT EXISTS projectdb;
+              CREATE USER IF NOT EXISTS 'projectUser'@'%' IDENTIFIED BY 'projectPass';
+              GRANT ALL PRIVILEGES ON projectdb.* TO 'projectUser'@'%';
+              FLUSH PRIVILEGES;
+              SQL
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MYSQL_ROOT_PASSWORD
 {{- end }}
 `
     );
 
     //
-    // 14f) MongoDB: a StatefulSet + Service + PVC (only if useMongo)
+    // 14f) MongoDB: replica set + arbiter (only if useMongo)
     //
     fs.writeFileSync(
-      path.join(helmDir, 'templates', 'mongo-statefulset.yaml'),
+      path.join(helmDir, 'templates', 'mongo-rs.yaml'),
       `{{- if .Values.useMongo }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: mongo
+  name: mongo-rs
   labels:
     app: mongo
 spec:
-  serviceName: mongo-headless
-  replicas: 1
+  serviceName: {{ .Values.mongoServiceName }}
+  replicas: 2
   selector:
     matchLabels:
-      app: mongo
+      app: mongo-rs
   template:
     metadata:
       labels:
-        app: mongo
+        app: mongo-rs
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      {{- range .Values.computeNodes }}
+                      - {{ . | quote }}
+                      {{- end }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: mongo-rs
+      initContainers:
+        - name: prepare-keyfile
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              cp /etc/mongo-keyfile-secret/keyfile /workdir/keyfile
+              chmod 600 /workdir/keyfile
+          volumeMounts:
+            - name: mongo-keyfile-secret
+              mountPath: /etc/mongo-keyfile-secret
+              readOnly: true
+            - name: mongo-keyfile
+              mountPath: /workdir
       containers:
         - name: mongo
           image: mongo:6.0
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
-              value: "root"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MONGO_ROOT_USERNAME
             - name: MONGO_INITDB_ROOT_PASSWORD
-              value: "rootpassword"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MONGO_ROOT_PASSWORD
+          args:
+            - "--bind_ip_all"
+            - "--replSet"
+            - "{{ .Values.mongoReplicaSetName }}"
+            - "--auth"
+            - "--keyFile=/etc/mongo-keyfile/keyfile"
           ports:
             - containerPort: 27017
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
+            - name: mongo-keyfile
+              mountPath: /etc/mongo-keyfile
+              readOnly: true
+      volumes:
+        - name: mongo-keyfile
+          emptyDir: {}
+        - name: mongo-keyfile-secret
+          secret:
+            secretName: {{ include "cars-project.fullname" . }}-db-connection
+            items:
+              - key: MONGO_RS_KEY
+                path: keyfile
       securityContext:
         fsGroup: 999
         fsGroupChangePolicy: "OnRootMismatch"
@@ -742,6 +971,7 @@ spec:
         name: mongo-data
       spec:
         accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storageClass | quote }}
         resources:
           requests:
             storage: {{ .Values.storage.mongoSize | quote }}
@@ -750,34 +980,158 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: mongo-headless
+  name: {{ .Values.mongoServiceName }}
   labels:
-    app: mongo
+    app: mongo-rs
 spec:
   clusterIP: None
   selector:
-    app: mongo
+    app: mongo-rs
   ports:
     - port: 27017
       targetPort: 27017
       protocol: TCP
       name: mongo
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-arbiter
+  labels:
+    app: mongo-arbiter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-arbiter
+  template:
+    metadata:
+      labels:
+        app: mongo-arbiter
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ .Values.storageWitnessNode | quote }}
+      tolerations:
+        - key: "storage.longhorn.io/node"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: mongo-arbiter
+          image: mongo:6.0
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MONGO_ROOT_PASSWORD
+          args:
+            - "--bind_ip_all"
+            - "--replSet"
+            - "{{ .Values.mongoReplicaSetName }}"
+            - "--auth"
+            - "--keyFile=/etc/mongo-keyfile/keyfile"
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-keyfile
+              mountPath: /etc/mongo-keyfile
+              readOnly: true
+      initContainers:
+        - name: prepare-keyfile
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              cp /etc/mongo-keyfile-secret/keyfile /workdir/keyfile
+              chmod 600 /workdir/keyfile
+          volumeMounts:
+            - name: mongo-keyfile-secret
+              mountPath: /etc/mongo-keyfile-secret
+              readOnly: true
+            - name: mongo-keyfile
+              mountPath: /workdir
+      volumes:
+        - name: mongo-keyfile
+          emptyDir: {}
+        - name: mongo-keyfile-secret
+          secret:
+            secretName: {{ include "cars-project.fullname" . }}-db-connection
+            items:
+              - key: MONGO_RS_KEY
+                path: keyfile
+---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mongo
+  name: mongo-arbiter
   labels:
-    app: mongo
+    app: mongo-arbiter
 spec:
-  clusterIP: None
   selector:
-    app: mongo
+    app: mongo-arbiter
   ports:
     - port: 27017
       targetPort: 27017
       protocol: TCP
       name: mongo
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongo-rs-init
+  labels:
+    app: mongo-rs
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: mongo-rs-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mongo-rs-init
+          image: mongo:6.0
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              until mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }} -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 })'; do
+                sleep 10
+              done
+              mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }} -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin <<'JS'
+              try {
+                rs.status()
+              } catch (e) {
+                rs.initiate({
+                  _id: "{{ .Values.mongoReplicaSetName }}",
+                  members: [
+                    { _id: 0, host: "mongo-rs-0.{{ .Values.mongoServiceName }}:27017", priority: 2 },
+                    { _id: 1, host: "mongo-rs-1.{{ .Values.mongoServiceName }}:27017", priority: 1 },
+                    { _id: 2, host: "mongo-arbiter:27017", arbiterOnly: true }
+                  ]
+                })
+              }
+              rs.status()
+              JS
+          env:
+            - name: MONGO_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cars-project.fullname" . }}-db-connection
+                  key: MONGO_ROOT_PASSWORD
 {{- end }}
 `
     );
