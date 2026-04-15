@@ -348,7 +348,7 @@ metadata:
 type: Opaque
 stringData:
   KNEX_URL: "mysql://projectUser:projectPass@{{ .Values.mysqlServiceName }}:3306/projectdb"
-  MONGO_URL: "mongodb://root:rootpassword@mongo-rs-0.{{ .Values.mongoServiceName }}:27017,mongo-rs-1.{{ .Values.mongoServiceName }}:27017/admin?replicaSet={{ .Values.mongoReplicaSetName }}&authSource=admin&readPreference=primaryPreferred"
+  MONGO_URL: "mongodb://root:rootpassword@mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017,mongo-rs-1.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017/admin?replicaSet={{ .Values.mongoReplicaSetName }}&authSource=admin&readPreference=primaryPreferred"
   MYSQL_ROOT_PASSWORD: "rootpassword"
   MYSQL_DATABASE: "projectdb"
   MYSQL_USER: "projectUser"
@@ -434,7 +434,7 @@ spec:
           - /bin/sh
           - -ec
           - |
-            until nc -z mongo-rs-0.{{ .Values.mongoServiceName }} 27017; do
+            until nc -z mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local 27017; do
               sleep 5
             done
       {{- end }}
@@ -966,6 +966,7 @@ spec:
             - |
               cp /etc/mongo-keyfile-secret/keyfile /workdir/keyfile
               chmod 600 /workdir/keyfile
+              chown 999:999 /workdir/keyfile
           volumeMounts:
             - name: mongo-keyfile-secret
               mountPath: /etc/mongo-keyfile-secret
@@ -1031,6 +1032,7 @@ metadata:
     app: mongo-rs
 spec:
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app: mongo-rs
   ports:
@@ -1097,6 +1099,7 @@ spec:
             - |
               cp /etc/mongo-keyfile-secret/keyfile /workdir/keyfile
               chmod 600 /workdir/keyfile
+              chown 999:999 /workdir/keyfile
           volumeMounts:
             - name: mongo-keyfile-secret
               mountPath: /etc/mongo-keyfile-secret
@@ -1149,19 +1152,19 @@ spec:
             - /bin/bash
             - -ec
             - |
-              until mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }} -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 })'; do
+              until mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 })'; do
                 sleep 10
               done
-              mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }} -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin <<'JS'
+              mongosh --host mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local -u "$MONGO_ROOT_USERNAME" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin <<'JS'
               try {
                 rs.status()
               } catch (e) {
                 rs.initiate({
                   _id: "{{ .Values.mongoReplicaSetName }}",
                   members: [
-                    { _id: 0, host: "mongo-rs-0.{{ .Values.mongoServiceName }}:27017", priority: 2 },
-                    { _id: 1, host: "mongo-rs-1.{{ .Values.mongoServiceName }}:27017", priority: 1 },
-                    { _id: 2, host: "mongo-arbiter:27017", arbiterOnly: true }
+                    { _id: 0, host: "mongo-rs-0.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017", priority: 2 },
+                    { _id: 1, host: "mongo-rs-1.{{ .Values.mongoServiceName }}.{{ .Release.Namespace }}.svc.cluster.local:27017", priority: 1 },
+                    { _id: 2, host: "mongo-arbiter.{{ .Release.Namespace }}.svc.cluster.local:27017", arbiterOnly: true }
                   ]
                 })
               }
