@@ -17,15 +17,18 @@ RUN curl -LO "https://dl.k8s.io/release/v1.25.0/bin/linux/amd64/kubectl" && \
 # Install helm
 RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | VERIFY_CHECKSUM=false bash
 
-# Copy only package files to install dependencies
-COPY package.json ./
+# Copy package metadata first for dependency installation
+COPY package.json package-lock.json tsconfig.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies and build the compiled runtime
+RUN npm ci
 
-# Copy the rest of the code
+# Copy the application source and build artifacts
 COPY src ./src
+COPY setup.ts ./setup.ts
 COPY wait-for-services.sh /wait-for-services.sh
+
+RUN npm run build
 
 RUN chmod +x /wait-for-services.sh
 
