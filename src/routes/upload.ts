@@ -917,6 +917,9 @@ metadata:
   name: mysql-bootstrap
   labels:
     app: mysql
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 6
   template:
@@ -1171,6 +1174,9 @@ metadata:
   name: mongo-rs-init
   labels:
     app: mongo-rs
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 6
   template:
