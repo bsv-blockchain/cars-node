@@ -797,10 +797,19 @@ spec:
   secretsName: mysql-secrets
   updateStrategy: SmartUpdate
   allowUnsafeConfigurations: false
+  unsafeFlags:
+    tls: true
   pxc:
     size: 3
-    image: percona/percona-xtradb-cluster:8.0.39-30.1
+    image: percona/percona-xtradb-cluster:8.0.42-33.1
     autoRecovery: true
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512M"
+      limits:
+        cpu: "600m"
+        memory: "1G"
     tolerations:
       - key: "storage.longhorn.io/node"
         operator: "Equal"
@@ -837,7 +846,15 @@ spec:
             storage: {{ .Values.storage.mysqlSize | quote }}
   haproxy:
     enabled: true
+    image: percona/haproxy:2.8.15
     size: 2
+    resources:
+      requests:
+        cpu: "150m"
+        memory: "256M"
+      limits:
+        cpu: "400m"
+        memory: "512M"
     podDisruptionBudget:
       minAvailable: 1
     affinity:
@@ -1191,11 +1208,14 @@ spec:
     const namespace = `cars-project-${project.project_uuid}`;
     const helmReleaseName = `cars-project-${project.project_uuid.substr(0, 24)}`;
 
-    runCmd(`helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic --create-namespace`);
+    const helmTimeout = process.env.CARS_HELM_TIMEOUT || '20m';
+    runCmd(
+      `helm upgrade --install ${helmReleaseName} ${helmDir} --namespace ${namespace} --atomic --create-namespace --timeout ${helmTimeout}`
+    );
     await logStep(`Helm release ${helmReleaseName} deployed for project ${project.project_uuid}`);
 
     // 16) Wait for the main deployment to roll out
-    runCmd(`kubectl rollout status deployment/${helmReleaseName}-deployment -n ${namespace}`);
+    runCmd(`kubectl rollout status deployment/${helmReleaseName}-deployment -n ${namespace} --timeout=${helmTimeout}`);
     await logStep(`Project ${project.project_uuid}, release ${deploymentId} rolled out successfully.`);
 
     // Log final URLs
